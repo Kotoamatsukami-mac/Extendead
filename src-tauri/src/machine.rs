@@ -4,10 +4,22 @@ use crate::models::{BrowserInfo, MachineInfo};
 
 /// Known browsers to scan for on macOS.
 static BROWSER_CANDIDATES: &[(&str, &str, &str)] = &[
-    ("Google Chrome", "com.google.Chrome", "/Applications/Google Chrome.app"),
+    (
+        "Google Chrome",
+        "com.google.Chrome",
+        "/Applications/Google Chrome.app",
+    ),
     ("Safari", "com.apple.Safari", "/Applications/Safari.app"),
-    ("Firefox", "org.mozilla.firefox", "/Applications/Firefox.app"),
-    ("Brave", "com.brave.Browser", "/Applications/Brave Browser.app"),
+    (
+        "Firefox",
+        "org.mozilla.firefox",
+        "/Applications/Firefox.app",
+    ),
+    (
+        "Brave",
+        "com.brave.Browser",
+        "/Applications/Brave Browser.app",
+    ),
     ("Arc", "company.thebrowser.Browser", "/Applications/Arc.app"),
 ];
 

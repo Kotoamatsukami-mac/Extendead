@@ -70,7 +70,9 @@ pub fn normalize(raw: &str) -> String {
 }
 
 fn matches_any(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|n| haystack == *n || haystack.starts_with(n))
+    needles
+        .iter()
+        .any(|n| haystack == *n || haystack.starts_with(n))
 }
 
 /// Try to extract a volume level (0–100) from strings like:

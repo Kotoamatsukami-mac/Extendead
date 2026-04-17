@@ -3,6 +3,7 @@ import { ExpandedConsole } from './components/ExpandedConsole';
 import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
 import { useMachineState } from './hooks/useMachineState';
+import { usePermissionStatus } from './hooks/usePermissionStatus';
 import type { ExecutionResult, ParsedCommand } from './types/commands';
 import type { ExecutionEvent } from './types/events';
 
@@ -33,6 +34,7 @@ export function App() {
   } | null>(null);
 
   const { machineInfo } = useMachineState();
+  const { permissionStatus } = usePermissionStatus();
 
   // parsedCommandRef allows bridge callbacks to read the latest value.
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
@@ -233,6 +235,7 @@ export function App() {
             execState={execState}
             events={events}
             result={result}
+            permissionStatus={permissionStatus}
             onSelectRoute={handleSelectRoute}
             onConfirm={handleConfirm}
             onCancel={handleCancel}
