@@ -1,4 +1,5 @@
-import React, { useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
+import type { ChangeEvent, KeyboardEvent } from 'react';
 import './LoungeStrip.css';
 
 interface LoungeStripProps {
@@ -29,7 +30,7 @@ export function LoungeStrip({
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && inputValue.trim()) {
       e.preventDefault();
       onSubmit(inputValue.trim());
@@ -39,7 +40,7 @@ export function LoungeStrip({
     }
   }
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleChange(e: ChangeEvent<HTMLInputElement>) {
     onInput(e.target.value);
   }
 

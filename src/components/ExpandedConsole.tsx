@@ -49,7 +49,7 @@ export function ExpandedConsole({
   return (
     <div className="expanded-console">
       {/* Header */}
-      <div className="expanded-console__header">
+      <div className="expanded-console__header" data-tauri-drag-region="true">
         <div className="expanded-console__intent">
           {parsedCommand && (
             <>

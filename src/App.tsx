@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExpandedConsole } from './components/ExpandedConsole';
 import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
@@ -26,13 +26,24 @@ export function App() {
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
 
+  // Used to trigger no-approval auto-execution after parse settles.
+  const [autoExec, setAutoExec] = useState<{
+    cmd: ParsedCommand;
+    routeIdx: number;
+  } | null>(null);
+
   const { machineInfo } = useMachineState();
+
+  // parsedCommandRef allows bridge callbacks to read the latest value.
+  const parsedCommandRef = useRef<ParsedCommand | null>(null);
+  parsedCommandRef.current = parsedCommand;
 
   const bridge = useCommandBridge({
     onParseStart: () => {
       setExecState('parsing');
       setEvents([]);
       setResult(null);
+      setAutoExec(null);
     },
     onParsed: (cmd) => {
       setParsedCommand(cmd);
@@ -50,14 +61,13 @@ export function App() {
         return;
       }
 
-      // Auto-select when there's only one route.
       if (cmd.routes.length === 1) {
         setSelectedRouteIndex(0);
         if (cmd.requires_approval) {
           setExecState('awaiting_confirm');
         } else {
-          // Auto-execute if no approval needed.
-          handleAutoExecute(cmd, 0);
+          // Signal auto-execution via state so it fires after this render.
+          setAutoExec({ cmd, routeIdx: 0 });
         }
       } else {
         setSelectedRouteIndex(null);
@@ -84,7 +94,7 @@ export function App() {
     onExecuteError: (err) => {
       setExecState('error');
       setResult({
-        command_id: parsedCommand?.id ?? '',
+        command_id: parsedCommandRef.current?.id ?? '',
         outcome: 'recoverable_failure',
         message: err,
         human_message: `✗ ${err}`,
@@ -98,10 +108,13 @@ export function App() {
     bridge.setWindowMode(mode);
   }, [mode, bridge]);
 
-  function handleAutoExecute(cmd: ParsedCommand, routeIdx: number) {
+  // Fire auto-execution for no-approval routes after state settles.
+  useEffect(() => {
+    if (!autoExec) return;
+    setAutoExec(null);
     setExecState('executing');
-    bridge.approveAndExecute(cmd.id, routeIdx);
-  }
+    bridge.approveAndExecute(autoExec.cmd.id, autoExec.routeIdx);
+  }, [autoExec, bridge]);
 
   const handleSubmit = useCallback(
     (value: string) => {
@@ -118,7 +131,8 @@ export function App() {
       if (parsedCommand.requires_approval) {
         setExecState('awaiting_confirm');
       } else {
-        handleAutoExecute(parsedCommand, index);
+        setExecState('executing');
+        bridge.approveAndExecute(parsedCommand.id, index);
       }
     },
     [parsedCommand, bridge],
@@ -165,6 +179,7 @@ export function App() {
     setExecState('idle');
     setEvents([]);
     setResult(null);
+    setAutoExec(null);
   }
 
   // Keyboard: Escape collapses.
@@ -178,8 +193,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [mode, handleCollapse]);
 
-  // Suppress unused variable warning for machineInfo — it's available for
-  // child components if needed in future phases.
+  // machineInfo available for future phases that need it.
   void machineInfo;
 
   return (
@@ -222,3 +236,5 @@ export function App() {
     </div>
   );
 }
+
+

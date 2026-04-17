@@ -1,3 +1,5 @@
+import type { KeyboardEvent } from 'react';
+
 interface ConfirmationRailProps {
   label: string;
   description: string;
@@ -11,7 +13,7 @@ export function ConfirmationRail({
   onConfirm,
   onCancel,
 }: ConfirmationRailProps) {
-  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'y' || e.key === 'Y') {
       e.preventDefault();
       onConfirm();

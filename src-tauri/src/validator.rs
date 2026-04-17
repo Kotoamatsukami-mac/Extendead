@@ -61,11 +61,11 @@ pub fn validate_action(action: &ResolvedAction) -> Result<(), AppError> {
         // System preferences and path opens are low-risk and pre-approved in Phase 1.
         ResolvedAction::OpenSystemPreferences { .. } => Ok(()),
         ResolvedAction::OpenPath { path } => {
-            // Only allow paths under home directory.
+            // Only allow paths under home directory (resolver always expands ~).
             let home = dirs::home_dir()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default();
-            if !path.starts_with(&home) && path != "~/Downloads" {
+            if !home.is_empty() && !path.starts_with(&home) {
                 return Err(AppError::ValidationError(format!(
                     "Path '{path}' is outside the home directory"
                 )));

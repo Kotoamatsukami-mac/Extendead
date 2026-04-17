@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { RiskLevel } from '../types/commands';
 
 interface RiskBadgeProps {
@@ -32,7 +33,7 @@ export function RiskBadge({ risk }: RiskBadgeProps) {
   return (
     <span
       className="risk-badge"
-      style={{ '--risk-color': meta.colorVar } as React.CSSProperties}
+      style={{ '--risk-color': meta.colorVar } as CSSProperties}
       title={meta.title}
       aria-label={`Risk level ${meta.label}: ${meta.title}`}
     >
