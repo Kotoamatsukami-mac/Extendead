@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+target/
+src-tauri/gen/
+src-tauri/target/
+.DS_Store
+*.pem
