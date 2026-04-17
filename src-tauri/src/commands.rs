@@ -5,7 +5,8 @@ use crate::models::{
     ApprovalStatus, ExecutionEvent, ExecutionEventKind, ExecutionResult,
     HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
 };
-use crate::{executor, history, machine, parser, permissions, resolver, risk};
+use crate::provider_keys::ProviderKeyStatus;
+use crate::{executor, history, machine, parser, permissions, provider_keys, resolver, risk};
 use crate::{AppState, APP_CONFIG_MAX_HISTORY};
 
 // ── parse_command ─────────────────────────────────────────────────────────────
@@ -261,4 +262,31 @@ pub async fn emit_test_event(app: AppHandle) -> Result<(), String> {
     };
     app.emit(EXECUTION_EVENT_NAME, ExecutionEventPayload { event })
         .map_err(|e| e.to_string())
+}
+
+// ── Provider key commands ─────────────────────────────────────────────────────
+// These commands manage AI provider credentials stored in the system keychain.
+// The raw key value is NEVER returned to the frontend; only masked status is.
+
+/// Return the masked status for a provider key (e.g. "openai").
+#[tauri::command]
+pub async fn get_provider_key_status(provider: String) -> Result<ProviderKeyStatus, String> {
+    Ok(provider_keys::key_status(&provider))
+}
+
+/// Store a provider key in the system keychain.
+/// The key must be supplied by the user via a secure input field and discarded
+/// from frontend state immediately after this call returns.
+#[tauri::command]
+pub async fn set_provider_key(provider: String, key: String) -> Result<(), String> {
+    if key.trim().is_empty() {
+        return Err("Key must not be empty".to_string());
+    }
+    provider_keys::store_key(&provider, &key).map_err(|e| e.to_string())
+}
+
+/// Delete a provider key from the system keychain.
+#[tauri::command]
+pub async fn delete_provider_key(provider: String) -> Result<(), String> {
+    provider_keys::delete_key(&provider).map_err(|e| e.to_string())
 }

@@ -7,6 +7,7 @@ import type {
   MachineInfo,
   ParsedCommand,
   PermissionStatus,
+  ProviderKeyStatus,
 } from '../types/commands';
 import type { ExecutionEvent, ExecutionEventPayload } from '../types/events';
 
@@ -120,6 +121,35 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     [],
   );
 
+  // ── Provider key helpers ──────────────────────────────────────────────────
+  // Raw key values must never be stored in React state; pass through
+  // immediately to Rust and discard.
+
+  const getProviderKeyStatus = useCallback(
+    async (provider: string): Promise<ProviderKeyStatus | null> => {
+      try {
+        return await invoke<ProviderKeyStatus>('get_provider_key_status', { provider });
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
+  const setProviderKey = useCallback(
+    async (provider: string, key: string): Promise<void> => {
+      await invoke('set_provider_key', { provider, key });
+    },
+    [],
+  );
+
+  const deleteProviderKey = useCallback(
+    async (provider: string): Promise<void> => {
+      await invoke('delete_provider_key', { provider });
+    },
+    [],
+  );
+
   return {
     parseCommand,
     approveAndExecute,
@@ -129,5 +159,8 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     getPermissionStatus,
     setWindowMode,
     toggleAlwaysOnTop,
+    getProviderKeyStatus,
+    setProviderKey,
+    deleteProviderKey,
   };
 }

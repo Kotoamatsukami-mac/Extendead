@@ -111,3 +111,13 @@ export interface PermissionStatus {
   accessibility: PermState;
   apple_events: PermState;
 }
+
+// ── Provider keys ─────────────────────────────────────────────────────────────
+// Only masked status is ever returned from Rust — never the raw key value.
+
+export type KeyStatus = 'set' | 'not_set' | 'access_denied';
+
+export interface ProviderKeyStatus {
+  provider: string;
+  status: KeyStatus;
+}

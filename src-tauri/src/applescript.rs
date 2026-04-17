@@ -35,6 +35,27 @@ pub fn run_validated_script(script: &str) -> Result<String, AppError> {
     run_script(script)
 }
 
+/// Get current system output volume as a 0–100 integer.
+/// Returns None if unavailable (non-macOS or osascript failure).
+pub fn get_volume() -> Option<u8> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("osascript")
+            .args(["-e", "output volume of (get volume settings)"])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let s = String::from_utf8_lossy(&output.stdout);
+        s.trim().parse::<u8>().ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn run_script(script: &str) -> Result<String, AppError> {
     let output = std::process::Command::new("osascript")

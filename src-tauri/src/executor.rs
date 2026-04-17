@@ -40,6 +40,17 @@ pub fn execute<R: Runtime>(
     let route = command.routes.get(route_index).expect("already validated");
     let command_id = command.id.as_str();
 
+    // For set_volume, capture the current volume before executing so the
+    // inverse action can restore it precisely rather than keeping it None.
+    let pre_volume: Option<u8> = match &route.action {
+        ResolvedAction::AppleScriptTemplate { template_id, .. }
+            if template_id == "set_volume" =>
+        {
+            applescript::get_volume()
+        }
+        _ => None,
+    };
+
     emit(
         app,
         new_event(
@@ -55,7 +66,16 @@ pub fn execute<R: Runtime>(
 
     match result {
         Ok(message) => {
-            let inverse = risk::inverse_action(&route.action);
+            // Build inverse: for set_volume, use the captured pre-volume level.
+            let inverse = if let Some(level) = pre_volume {
+                Some(ResolvedAction::AppleScriptTemplate {
+                    script: format!("set volume output volume {level}"),
+                    template_id: "set_volume".to_string(),
+                })
+            } else {
+                risk::inverse_action(&route.action)
+            };
+
             emit(
                 app,
                 new_event(command_id, ExecutionEventKind::Completed, message.clone()),
@@ -185,16 +205,22 @@ fn open_url(_url: &str, _browser_bundle: &str) -> Result<String, AppError> {
 }
 
 #[cfg(target_os = "macos")]
-fn open_app(app_name: &str, _bundle_id: &str) -> Result<String, AppError> {
-    let status = std::process::Command::new("open")
-        .args(["-a", app_name])
+fn open_app(app_name: &str, bundle_id: &str) -> Result<String, AppError> {
+    // Prefer bundle ID (-b flag) for reliability; fall back to app name (-a flag).
+    let mut cmd = std::process::Command::new("open");
+    if !bundle_id.is_empty() {
+        cmd.args(["-b", bundle_id]);
+    } else {
+        cmd.args(["-a", app_name]);
+    }
+    let status = cmd
         .status()
-        .map_err(|e| AppError::ExecutionError(format!("open -a failed: {e}")))?;
+        .map_err(|e| AppError::ExecutionError(format!("open failed: {e}")))?;
     if status.success() {
         Ok(format!("Launched {app_name}"))
     } else {
         Err(AppError::ExecutionError(format!(
-            "open -a {app_name} exited with status {status}"
+            "open {app_name} exited with status {status}"
         )))
     }
 }

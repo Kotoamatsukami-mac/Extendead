@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 
 interface ConfirmationRailProps {
   label: string;
@@ -13,6 +13,13 @@ export function ConfirmationRail({
   onConfirm,
   onCancel,
 }: ConfirmationRailProps) {
+  const railRef = useRef<HTMLDivElement>(null);
+
+  // Auto-focus so keyboard Y/N works immediately without a click.
+  useEffect(() => {
+    railRef.current?.focus();
+  }, []);
+
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'y' || e.key === 'Y') {
       e.preventDefault();
@@ -24,7 +31,7 @@ export function ConfirmationRail({
   }
 
   return (
-    <div className="confirm-rail" onKeyDown={handleKeyDown} tabIndex={0}>
+    <div ref={railRef} className="confirm-rail" onKeyDown={handleKeyDown} tabIndex={0}>
       <div className="confirm-rail__intent">
         <span className="confirm-rail__label">{label}</span>
         <span className="confirm-rail__desc">{description}</span>

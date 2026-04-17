@@ -182,16 +182,24 @@ export function App() {
     setAutoExec(null);
   }
 
-  // Keyboard: Escape collapses.
+  // Global keyboard: Escape collapses; Y/N confirm or cancel when awaiting approval.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' && mode === 'expanded') {
         handleCollapse();
+      } else if (execState === 'awaiting_confirm') {
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          handleConfirm();
+        } else if (e.key === 'n' || e.key === 'N') {
+          e.preventDefault();
+          handleCancel();
+        }
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mode, handleCollapse]);
+  }, [mode, execState, handleCollapse, handleConfirm, handleCancel]);
 
   // machineInfo available for future phases that need it.
   void machineInfo;

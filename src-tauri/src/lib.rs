@@ -15,6 +15,7 @@ pub mod models;
 pub mod parser;
 pub mod permissions;
 pub mod planner;
+pub mod provider_keys;
 pub mod resolver;
 pub mod risk;
 pub mod ui_automation;
@@ -103,6 +104,9 @@ pub fn run() {
             commands::set_window_mode,
             commands::toggle_always_on_top,
             commands::refresh_machine_info,
+            commands::get_provider_key_status,
+            commands::set_provider_key,
+            commands::delete_provider_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
