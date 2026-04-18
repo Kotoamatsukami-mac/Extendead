@@ -106,10 +106,19 @@ export interface BrowserInfo {
   path: string;
 }
 
+export interface AppInfo {
+  name: string;
+  bundle_id: string;
+  path: string;
+}
+
 export interface MachineInfo {
   hostname: string;
   username: string;
+  os_version: string;
+  architecture: string;
   installed_browsers: BrowserInfo[];
+  installed_apps: AppInfo[];
   home_dir: string;
 }
 

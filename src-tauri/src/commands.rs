@@ -19,16 +19,23 @@ pub async fn parse_command(
     let normalized = parser::normalize(&input);
     let intent = parser::parse_intent(&normalized);
 
-    let browsers = {
+    let machine_info = {
         let inner = state.inner.lock().map_err(|_| "state lock error")?;
         inner
             .machine_info
-            .as_ref()
-            .map(|m| m.installed_browsers.clone())
-            .unwrap_or_default()
+            .clone()
+            .unwrap_or_else(|| crate::models::MachineInfo {
+                hostname: String::new(),
+                username: String::new(),
+                os_version: String::new(),
+                architecture: String::new(),
+                installed_browsers: vec![],
+                installed_apps: vec![],
+                home_dir: String::new(),
+            })
     };
 
-    let (kind, routes) = resolver::resolve(&intent, &browsers);
+    let (kind, routes) = resolver::resolve(&intent, &machine_info);
 
     let cmd = ParsedCommand {
         id: uuid::Uuid::new_v4().to_string(),

@@ -1,7 +1,8 @@
-use crate::models::{BrowserInfo, CommandKind, ResolvedAction, ResolvedRoute};
+use crate::models::{BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedRoute};
 use crate::parser::Intent;
 
-pub fn resolve(intent: &Intent, browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>) {
+pub fn resolve(intent: &Intent, machine: &MachineInfo) -> (CommandKind, Vec<ResolvedRoute>) {
+    let browsers = &machine.installed_browsers;
     match intent {
         Intent::OpenYoutube => resolve_youtube(browsers),
         Intent::OpenYoutubeInSafari => resolve_youtube_in_browser("Safari", "com.apple.Safari"),
@@ -11,12 +12,8 @@ pub fn resolve(intent: &Intent, browsers: &[BrowserInfo]) -> (CommandKind, Vec<R
         Intent::OpenYoutubeInFirefox => {
             resolve_youtube_in_browser("Firefox", "org.mozilla.firefox")
         }
-        Intent::OpenYoutubeInBrave => {
-            resolve_youtube_in_browser("Brave", "com.brave.Browser")
-        }
-        Intent::OpenYoutubeInArc => {
-            resolve_youtube_in_browser("Arc", "company.thebrowser.Browser")
-        }
+        Intent::OpenYoutubeInBrave => resolve_youtube_in_browser("Brave", "com.brave.Browser"),
+        Intent::OpenYoutubeInArc => resolve_youtube_in_browser("Arc", "company.thebrowser.Browser"),
         Intent::OpenSafari => resolve_open_app("Safari", "com.apple.Safari"),
         Intent::OpenChrome => resolve_open_app("Google Chrome", "com.google.Chrome"),
         Intent::OpenFirefox => resolve_open_app("Firefox", "org.mozilla.firefox"),
@@ -61,7 +58,10 @@ fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>
     (CommandKind::MixedWorkflow, routes)
 }
 
-fn resolve_youtube_in_browser(browser_name: &str, bundle_id: &str) -> (CommandKind, Vec<ResolvedRoute>) {
+fn resolve_youtube_in_browser(
+    browser_name: &str,
+    bundle_id: &str,
+) -> (CommandKind, Vec<ResolvedRoute>) {
     (
         CommandKind::MixedWorkflow,
         vec![ResolvedRoute {
@@ -144,44 +144,65 @@ fn resolve_downloads() -> (CommandKind, Vec<ResolvedRoute>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::AppInfo;
     use crate::parser::Intent;
 
-    fn no_browsers() -> Vec<BrowserInfo> {
-        vec![]
+    fn no_browsers_machine() -> MachineInfo {
+        MachineInfo {
+            hostname: "test".to_string(),
+            username: "test".to_string(),
+            os_version: "14.0".to_string(),
+            architecture: "x86_64".to_string(),
+            installed_browsers: vec![],
+            installed_apps: vec![],
+            home_dir: "/Users/test".to_string(),
+        }
     }
 
-    fn two_browsers() -> Vec<BrowserInfo> {
-        vec![
-            BrowserInfo {
-                name: "Safari".to_string(),
-                bundle_id: "com.apple.Safari".to_string(),
-                path: "/Applications/Safari.app".to_string(),
-            },
-            BrowserInfo {
-                name: "Chrome".to_string(),
-                bundle_id: "com.google.Chrome".to_string(),
-                path: "/Applications/Google Chrome.app".to_string(),
-            },
-        ]
+    fn two_browsers_machine() -> MachineInfo {
+        MachineInfo {
+            hostname: "test".to_string(),
+            username: "test".to_string(),
+            os_version: "14.0".to_string(),
+            architecture: "x86_64".to_string(),
+            installed_browsers: vec![
+                BrowserInfo {
+                    name: "Safari".to_string(),
+                    bundle_id: "com.apple.Safari".to_string(),
+                    path: "/Applications/Safari.app".to_string(),
+                },
+                BrowserInfo {
+                    name: "Chrome".to_string(),
+                    bundle_id: "com.google.Chrome".to_string(),
+                    path: "/Applications/Google Chrome.app".to_string(),
+                },
+            ],
+            installed_apps: vec![AppInfo {
+                name: "Slack".to_string(),
+                bundle_id: "com.tinyspeck.slackmacgap".to_string(),
+                path: "/Applications/Slack.app".to_string(),
+            }],
+            home_dir: "/Users/test".to_string(),
+        }
     }
 
     #[test]
     fn youtube_no_browsers_resolves_default() {
-        let (kind, routes) = resolve(&Intent::OpenYoutube, &no_browsers());
+        let (kind, routes) = resolve(&Intent::OpenYoutube, &no_browsers_machine());
         assert_eq!(kind, CommandKind::MixedWorkflow);
         assert_eq!(routes.len(), 1);
     }
 
     #[test]
     fn youtube_two_browsers_resolves_multiple_routes() {
-        let (kind, routes) = resolve(&Intent::OpenYoutube, &two_browsers());
+        let (kind, routes) = resolve(&Intent::OpenYoutube, &two_browsers_machine());
         assert_eq!(kind, CommandKind::MixedWorkflow);
         assert_eq!(routes.len(), 2);
     }
 
     #[test]
     fn youtube_in_specific_browser_resolves_single_target() {
-        let (kind, routes) = resolve(&Intent::OpenYoutubeInSafari, &no_browsers());
+        let (kind, routes) = resolve(&Intent::OpenYoutubeInSafari, &no_browsers_machine());
         assert_eq!(kind, CommandKind::MixedWorkflow);
         assert_eq!(routes.len(), 1);
         match &routes[0].action {
@@ -194,10 +215,13 @@ mod tests {
 
     #[test]
     fn browser_app_intent_resolves_to_open_app() {
-        let (kind, routes) = resolve(&Intent::OpenChrome, &no_browsers());
+        let (kind, routes) = resolve(&Intent::OpenChrome, &no_browsers_machine());
         assert_eq!(kind, CommandKind::AppControl);
         match &routes[0].action {
-            ResolvedAction::OpenApp { bundle_id, app_name } => {
+            ResolvedAction::OpenApp {
+                bundle_id,
+                app_name,
+            } => {
                 assert_eq!(bundle_id, "com.google.Chrome");
                 assert_eq!(app_name, "Google Chrome");
             }
@@ -207,7 +231,7 @@ mod tests {
 
     #[test]
     fn finder_resolves_to_open_app() {
-        let (kind, routes) = resolve(&Intent::OpenFinder, &no_browsers());
+        let (kind, routes) = resolve(&Intent::OpenFinder, &no_browsers_machine());
         assert_eq!(kind, CommandKind::AppControl);
         match &routes[0].action {
             ResolvedAction::OpenApp { bundle_id, .. } => {
@@ -219,10 +243,20 @@ mod tests {
 
     #[test]
     fn existing_commands_still_resolve() {
-        assert_eq!(resolve(&Intent::OpenSlack, &no_browsers()).0, CommandKind::AppControl);
-        assert_eq!(resolve(&Intent::MuteVolume, &no_browsers()).0, CommandKind::LocalSystem);
-        assert_eq!(resolve(&Intent::SetVolume(42), &no_browsers()).0, CommandKind::LocalSystem);
-        assert_eq!(resolve(&Intent::OpenDisplaySettings, &no_browsers()).0, CommandKind::LocalSystem);
-        assert_eq!(resolve(&Intent::RevealDownloads, &no_browsers()).0, CommandKind::Filesystem);
+        let m = no_browsers_machine();
+        assert_eq!(resolve(&Intent::OpenSlack, &m).0, CommandKind::AppControl);
+        assert_eq!(resolve(&Intent::MuteVolume, &m).0, CommandKind::LocalSystem);
+        assert_eq!(
+            resolve(&Intent::SetVolume(42), &m).0,
+            CommandKind::LocalSystem
+        );
+        assert_eq!(
+            resolve(&Intent::OpenDisplaySettings, &m).0,
+            CommandKind::LocalSystem
+        );
+        assert_eq!(
+            resolve(&Intent::RevealDownloads, &m).0,
+            CommandKind::Filesystem
+        );
     }
 }
