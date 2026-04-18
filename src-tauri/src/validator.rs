@@ -16,6 +16,7 @@ static APPROVED_BUNDLE_IDS: &[&str] = &[
     "org.mozilla.firefox",
     "com.brave.Browser",
     "company.thebrowser.Browser",
+    "com.apple.finder",
 ];
 
 /// Validate that a parsed command and its selected route are safe to execute.
@@ -142,6 +143,7 @@ mod tests {
             "org.mozilla.firefox",
             "com.brave.Browser",
             "company.thebrowser.Browser",
+            "com.apple.finder",
         ];
         for bundle in bundles {
             let action = ResolvedAction::OpenApp {
