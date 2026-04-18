@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ProviderKeyStatus } from '../types/commands';
-import './DeveloperPanel.css';
 
 interface DeveloperPanelProps {
   status: ProviderKeyStatus | null;
