@@ -21,6 +21,7 @@ npm run tauri dev
 - [ ] Lounge strip appears centered on screen, slim (50 px tall), transparent glass background
 - [ ] No dock icon (skipTaskbar active)
 - [ ] Strip is always-on-top by default (⊛ pin button shows active state)
+- [ ] **Phase 2**: always-on-top state is persisted — relaunching the app restores the previous pin state
 
 ---
 
@@ -38,6 +39,7 @@ npm run tauri dev
 - [ ] Click the ⊛ pin button → strip no longer floats above all windows
 - [ ] Click again → strip goes back to always-on-top
 - [ ] State survives mode transitions (lounge ↔ expanded)
+- [ ] **Phase 2**: preference is written to `~/Library/Application Support/extendead/config.json` and applied on next launch
 
 ---
 
@@ -54,6 +56,7 @@ Type: `open youtube`
 - [ ] Press `N` → console collapses, command is denied
 - [ ] Press `Esc` → same as N
 - [ ] Undo button is **not** shown (OpenUrl has no inverse)
+- [ ] **Phase 2**: event timeline shows concrete "Opening https://www.youtube.com in Safari" message
 
 ---
 
@@ -65,6 +68,7 @@ Type: `slack` or `open slack`
 - [ ] Risk `R0`, no confirmation required — executes immediately
 - [ ] Slack launches (or comes to front)
 - [ ] Event timeline shows `Started → Progress → Completed`
+- [ ] **Phase 2**: result message reads "✓ Open Slack", progress says "Launching Slack"
 
 ---
 
@@ -74,7 +78,7 @@ Type: `mute`
 
 - [ ] Intent: `local system`, Risk: `R1`, confirmation required
 - [ ] Confirm → system audio mutes
-- [ ] Result card shows `✓ Mute Mac`
+- [ ] **Phase 2**: result card shows `✓ Mute Mac`, event timeline shows "Muting system audio output"
 - [ ] **Undo** button appears → click it → system unmutes
 
 ---
@@ -86,7 +90,8 @@ Type: `set volume to 40`
 - [ ] Intent: `local system`, Risk: `R1`, confirmation required
 - [ ] Confirm → system volume changes to 40 %
 - [ ] Result card shows duration
-- [ ] Undo button appears → click → volume returns to the pre-execution level
+- [ ] **Phase 2**: event timeline shows "Setting output volume"
+- [ ] Undo button appears → click → volume returns to the pre-execution level (captured before execution)
 
 ---
 
@@ -97,6 +102,7 @@ Type: `display settings`
 - [ ] Risk: `R0`, no confirmation, executes immediately
 - [ ] System Settings → Displays pane opens
 - [ ] No Undo button shown
+- [ ] **Phase 2**: event timeline shows "Opening System Settings"
 
 ---
 
@@ -107,6 +113,7 @@ Type: `downloads`
 - [ ] Risk: `R0`, no confirmation
 - [ ] Finder opens ~/Downloads
 - [ ] No Undo button
+- [ ] **Phase 2**: event timeline shows "Revealing ~/Downloads in Finder"
 
 ---
 
@@ -124,17 +131,44 @@ Accessibility access.
 osascript requires Apple Events permission.
 
 - [ ] First use triggers Apple Events prompt
-- [ ] Deny → osascript fails, error result shown
+- [ ] **Phase 2**: If Apple Events is denied, execution returns `blocked` outcome — NOT silent failure
+- [ ] **Phase 2**: Result card shows `✗ Permission required — Apple Events permission required. Grant access in System Settings → Privacy & Security → Automation.`
+- [ ] **Phase 2**: The amber ⚠ banner in the console shows actionable text: "Grant in System Settings → Privacy & Security → Automation."
 
 ### Permission banner
 - [ ] Open expanded console (type any command)
 - [ ] If Accessibility is `unknown` or `denied`, the amber ⚠ banner appears at the bottom
-- [ ] Banner message references System Settings → Privacy & Security → Accessibility
+- [ ] **Phase 2**: Accessibility banner says "required for UI automation. Grant in System Settings → Privacy & Security → Accessibility."
+- [ ] **Phase 2**: Apple Events banner says "required for volume & audio commands. Grant in System Settings → Privacy & Security → Automation."
 - [ ] If both permissions are granted, no banner is shown
 
 ---
 
-## 11. Provider key storage
+## 11. History drawer (Phase 2)
+
+- [ ] Type any command and execute it
+- [ ] Click the 🕒 clock button in the expanded console header
+- [ ] History drawer opens showing recent commands (newest first, up to 5 entries)
+- [ ] Each entry shows: command text, outcome icon (✓/✗/⊘), relative timestamp
+- [ ] If the most recent entry has an inverse action, an ↩ undo button appears on it
+- [ ] Clicking ↩ triggers undo; result updates
+- [ ] Clicking 🕒 again closes the drawer
+- [ ] History is persisted at `~/Library/Application Support/extendead/history.json`
+
+---
+
+## 12. Focus and keyboard flow (Phase 2)
+
+- [ ] After collapsing the console (Esc or N), the strip input immediately regains focus
+- [ ] Typing a new command works without clicking first
+- [ ] `Enter` submits the input
+- [ ] `Y` confirms when the approval rail is visible
+- [ ] `N` cancels when the approval rail is visible
+- [ ] `Escape` collapses expanded console
+
+---
+
+## 13. Provider key storage
 
 Open System Settings flow is manual for v1. Test via the Rust layer:
 
@@ -144,13 +178,13 @@ security find-generic-password -s com.extendead.app -a openai
 # Expect: nothing (key not set)
 ```
 
-Via the app (requires a UI surface for key management — Phase 2):  
+Via the app (requires a UI surface for key management — Phase 3):  
 For now, the keychain commands are tested at the command layer only.  
 Verify that no key material appears in any log output, IPC payload, or event message.
 
 ---
 
-## 12. Keyboard shortcuts in expanded console
+## 14. Keyboard shortcuts in expanded console
 
 - [ ] `Y` → confirms pending approval
 - [ ] `N` → denies and collapses
@@ -158,11 +192,41 @@ Verify that no key material appears in any log output, IPC payload, or event mes
 
 ---
 
-## 13. History persistence
+## 15. History persistence
 
 - [ ] Execute several commands
 - [ ] Quit and relaunch the app
 - [ ] History is retained across sessions (stored at `~/Library/Application Support/extendead/history.json`)
+
+---
+
+## Phase 2 expected outcomes summary
+
+After Phase 2, the following must work reliably on a real Mac:
+
+| Command | Expected |
+|---|---|
+| `open youtube` | Route selector → Y → browser opens youtube.com |
+| `open slack` | Launches Slack immediately (R0, no confirm) |
+| `mute` | Y → audio mutes, ↩ Undo unmutes |
+| `set volume to 30` | Y → volume set to 30, ↩ Undo restores prior level |
+| `display settings` | Displays pane opens immediately |
+| `downloads` | ~/Downloads opens in Finder |
+
+### Permission-sensitive behaviors
+
+- Volume / mute commands use `set volume` AppleScript — no Apple Events prompt on first use  
+  (these commands are built-in osascript, not targeting another app)
+- If osascript is blocked at the process level (rare), execution returns `blocked` with a clear next-action message — never silent failure
+- Accessibility is reported as `unknown` (Phase 3 will add AXIsProcessTrusted native binding)
+- Apple Events probe uses a harmless volume-read that does not trigger a permission dialog
+
+### Known Phase 2 limitations
+
+- Accessibility permission state is always `unknown` — native `AXIsProcessTrusted()` binding is Phase 3
+- Remote planner is not available — unrecognised commands show "Command not recognised"
+- No per-entry history undo (only the most recent reversible entry can be undone)
+- History drawer shows last 5 entries; full history is persisted but not paginated in UI
 
 ---
 

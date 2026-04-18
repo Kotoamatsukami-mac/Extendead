@@ -84,3 +84,173 @@ fn extract_host(url: &str) -> Option<String> {
     let host = without_scheme.split('/').next()?;
     Some(host.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── URL validation ────────────────────────────────────────────────────────
+
+    #[test]
+    fn approved_youtube_url_passes() {
+        let action = ResolvedAction::OpenUrl {
+            url: "https://www.youtube.com".to_string(),
+            browser_bundle: String::new(),
+            browser_name: "Safari".to_string(),
+        };
+        assert!(validate_action(&action).is_ok());
+    }
+
+    #[test]
+    fn unapproved_url_host_is_rejected() {
+        let action = ResolvedAction::OpenUrl {
+            url: "https://example.com".to_string(),
+            browser_bundle: String::new(),
+            browser_name: "Safari".to_string(),
+        };
+        let err = validate_action(&action).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn malformed_url_without_scheme_is_rejected() {
+        let action = ResolvedAction::OpenUrl {
+            url: "not-a-url".to_string(),
+            browser_bundle: String::new(),
+            browser_name: "Safari".to_string(),
+        };
+        let err = validate_action(&action).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    // ── Bundle ID validation ──────────────────────────────────────────────────
+
+    #[test]
+    fn approved_bundle_id_passes() {
+        let action = ResolvedAction::OpenApp {
+            bundle_id: "com.tinyspeck.slackmacgap".to_string(),
+            app_name: "Slack".to_string(),
+        };
+        assert!(validate_action(&action).is_ok());
+    }
+
+    #[test]
+    fn all_approved_browsers_pass() {
+        let bundles = [
+            "com.google.Chrome",
+            "com.apple.Safari",
+            "org.mozilla.firefox",
+            "com.brave.Browser",
+            "company.thebrowser.Browser",
+        ];
+        for bundle in bundles {
+            let action = ResolvedAction::OpenApp {
+                bundle_id: bundle.to_string(),
+                app_name: "Browser".to_string(),
+            };
+            assert!(
+                validate_action(&action).is_ok(),
+                "bundle {bundle} should be approved"
+            );
+        }
+    }
+
+    #[test]
+    fn unapproved_bundle_id_is_rejected() {
+        let action = ResolvedAction::OpenApp {
+            bundle_id: "com.evil.app".to_string(),
+            app_name: "Evil".to_string(),
+        };
+        let err = validate_action(&action).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    // ── AppleScript template validation ───────────────────────────────────────
+
+    #[test]
+    fn approved_templates_pass() {
+        let templates = ["mute_volume", "unmute_volume", "set_volume", "get_volume"];
+        for tmpl in templates {
+            let action = ResolvedAction::AppleScriptTemplate {
+                script: "set volume with output muted".to_string(),
+                template_id: tmpl.to_string(),
+            };
+            assert!(
+                validate_action(&action).is_ok(),
+                "template {tmpl} should be approved"
+            );
+        }
+    }
+
+    #[test]
+    fn unapproved_template_is_rejected() {
+        let action = ResolvedAction::AppleScriptTemplate {
+            script: "do shell script \"rm -rf /\"".to_string(),
+            template_id: "dangerous_script".to_string(),
+        };
+        let err = validate_action(&action).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    // ── System preferences ────────────────────────────────────────────────────
+
+    #[test]
+    fn system_preferences_always_passes() {
+        let action = ResolvedAction::OpenSystemPreferences {
+            pane_url: "x-apple.systempreferences:com.apple.preference.displays".to_string(),
+        };
+        assert!(validate_action(&action).is_ok());
+    }
+
+    // ── Path validation ───────────────────────────────────────────────────────
+
+    #[test]
+    fn path_outside_home_is_rejected() {
+        // Only meaningful if home_dir is available; skip on CI if not.
+        if let Some(home) = dirs::home_dir() {
+            let action = ResolvedAction::OpenPath {
+                path: "/etc/passwd".to_string(),
+            };
+            // /etc is outside home, so it should fail if home is non-empty.
+            if !home.display().to_string().is_empty() {
+                let err = validate_action(&action).unwrap_err();
+                assert!(matches!(err, AppError::ValidationError(_)));
+            }
+        }
+    }
+
+    #[test]
+    fn path_inside_home_passes() {
+        if let Some(home) = dirs::home_dir() {
+            let path = format!("{}/Downloads", home.display());
+            let action = ResolvedAction::OpenPath { path };
+            assert!(validate_action(&action).is_ok());
+        }
+    }
+
+    // ── Route index out of range ──────────────────────────────────────────────
+
+    #[test]
+    fn out_of_range_route_index_is_rejected() {
+        use crate::models::{ApprovalStatus, CommandKind, ResolvedRoute, RiskLevel};
+        let cmd = ParsedCommand {
+            id: "test".to_string(),
+            raw_input: "mute".to_string(),
+            normalized: "mute".to_string(),
+            kind: CommandKind::LocalSystem,
+            routes: vec![ResolvedRoute {
+                label: "Mute".to_string(),
+                description: "Mute audio".to_string(),
+                action: ResolvedAction::AppleScriptTemplate {
+                    script: "set volume with output muted".to_string(),
+                    template_id: "mute_volume".to_string(),
+                },
+            }],
+            risk: RiskLevel::R1,
+            requires_approval: true,
+            approval_status: ApprovalStatus::Approved,
+        };
+        let err = validate(&cmd, 99).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+    }
+}

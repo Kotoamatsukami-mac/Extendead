@@ -56,6 +56,18 @@ pub fn get_volume() -> Option<u8> {
     }
 }
 
+/// Return true when the osascript stderr indicates a permission denial.
+/// macOS uses error code -1743 ("Not authorized to send Apple events") and
+/// similar messages for both Apple Events and Accessibility refusals.
+#[cfg(any(target_os = "macos", test))]
+fn is_permission_denied(stderr: &str) -> bool {
+    stderr.contains("Not authorized")
+        || stderr.contains("-1743")
+        || stderr.contains("not allowed to send")
+        || stderr.contains("access for assistive devices")
+        || stderr.contains("is not allowed assistive access")
+}
+
 #[cfg(target_os = "macos")]
 fn run_script(script: &str) -> Result<String, AppError> {
     let output = std::process::Command::new("osascript")
@@ -69,9 +81,15 @@ fn run_script(script: &str) -> Result<String, AppError> {
         Ok(stdout)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(AppError::ExecutionError(format!(
-            "osascript exited with error: {stderr}"
-        )))
+        if is_permission_denied(&stderr) {
+            Err(AppError::PermissionDenied(
+                "Apple Events permission required. Grant access in System Settings → Privacy & Security → Automation.".to_string(),
+            ))
+        } else {
+            Err(AppError::ExecutionError(format!(
+                "osascript exited with error: {stderr}"
+            )))
+        }
     }
 }
 
@@ -80,4 +98,22 @@ fn run_script(_script: &str) -> Result<String, AppError> {
     Err(AppError::PlatformNotSupported(
         "AppleScript requires macOS".to_string(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_permission_denied_detection() {
+        assert!(is_permission_denied(
+            "execution error: Not authorized to send Apple events (-1743)"
+        ));
+        assert!(is_permission_denied(
+            "osascript is not allowed to send keystrokes"
+        ));
+        assert!(is_permission_denied("-1743"));
+        assert!(!is_permission_denied("syntax error near line 1"));
+        assert!(!is_permission_denied(""));
+    }
 }

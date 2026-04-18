@@ -88,6 +88,16 @@ export interface ExecutionResult {
   inverse_action?: ResolvedAction;
 }
 
+// ── History ──────────────────────────────────────────────────────────────────
+
+export interface HistoryEntry {
+  command: ParsedCommand;
+  outcome: ExecutionOutcome;
+  duration_ms: number;
+  inverse_action?: ResolvedAction;
+  timestamp: string;
+}
+
 // ── Machine info ─────────────────────────────────────────────────────────────
 
 export interface BrowserInfo {

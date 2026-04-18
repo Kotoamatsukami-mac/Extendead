@@ -107,3 +107,176 @@ fn resolve_downloads() -> (CommandKind, Vec<ResolvedRoute>) {
     }];
     (CommandKind::Filesystem, routes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::Intent;
+
+    fn no_browsers() -> Vec<BrowserInfo> {
+        vec![]
+    }
+
+    fn one_browser() -> Vec<BrowserInfo> {
+        vec![BrowserInfo {
+            name: "Safari".to_string(),
+            bundle_id: "com.apple.Safari".to_string(),
+            path: "/Applications/Safari.app".to_string(),
+        }]
+    }
+
+    fn two_browsers() -> Vec<BrowserInfo> {
+        vec![
+            BrowserInfo {
+                name: "Safari".to_string(),
+                bundle_id: "com.apple.Safari".to_string(),
+                path: "/Applications/Safari.app".to_string(),
+            },
+            BrowserInfo {
+                name: "Chrome".to_string(),
+                bundle_id: "com.google.Chrome".to_string(),
+                path: "/Applications/Google Chrome.app".to_string(),
+            },
+        ]
+    }
+
+    // ── YouTube ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn youtube_no_browsers_resolves_default() {
+        let (kind, routes) = resolve(&Intent::OpenYoutube, &no_browsers());
+        assert_eq!(kind, CommandKind::MixedWorkflow);
+        assert_eq!(routes.len(), 1);
+        match &routes[0].action {
+            ResolvedAction::OpenUrl {
+                url,
+                browser_bundle,
+                browser_name,
+            } => {
+                assert_eq!(url, "https://www.youtube.com");
+                assert_eq!(browser_bundle, "");
+                assert_eq!(browser_name, "Default Browser");
+            }
+            _ => panic!("expected OpenUrl"),
+        }
+    }
+
+    #[test]
+    fn youtube_one_browser_resolves_single_route() {
+        let (kind, routes) = resolve(&Intent::OpenYoutube, &one_browser());
+        assert_eq!(kind, CommandKind::MixedWorkflow);
+        assert_eq!(routes.len(), 1);
+        match &routes[0].action {
+            ResolvedAction::OpenUrl { browser_bundle, .. } => {
+                assert_eq!(browser_bundle, "com.apple.Safari");
+            }
+            _ => panic!("expected OpenUrl"),
+        }
+    }
+
+    #[test]
+    fn youtube_two_browsers_resolves_two_routes() {
+        let (kind, routes) = resolve(&Intent::OpenYoutube, &two_browsers());
+        assert_eq!(kind, CommandKind::MixedWorkflow);
+        assert_eq!(routes.len(), 2);
+    }
+
+    // ── Slack ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn slack_resolves_to_app_control() {
+        let (kind, routes) = resolve(&Intent::OpenSlack, &no_browsers());
+        assert_eq!(kind, CommandKind::AppControl);
+        assert_eq!(routes.len(), 1);
+        match &routes[0].action {
+            ResolvedAction::OpenApp {
+                bundle_id,
+                app_name,
+            } => {
+                assert_eq!(bundle_id, "com.tinyspeck.slackmacgap");
+                assert_eq!(app_name, "Slack");
+            }
+            _ => panic!("expected OpenApp"),
+        }
+    }
+
+    // ── Mute ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn mute_resolves_to_applescript_template() {
+        let (kind, routes) = resolve(&Intent::MuteVolume, &no_browsers());
+        assert_eq!(kind, CommandKind::LocalSystem);
+        assert_eq!(routes.len(), 1);
+        match &routes[0].action {
+            ResolvedAction::AppleScriptTemplate { template_id, .. } => {
+                assert_eq!(template_id, "mute_volume");
+            }
+            _ => panic!("expected AppleScriptTemplate"),
+        }
+    }
+
+    // ── Set volume ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_volume_resolves_with_correct_level() {
+        let (kind, routes) = resolve(&Intent::SetVolume(42), &no_browsers());
+        assert_eq!(kind, CommandKind::LocalSystem);
+        assert_eq!(routes.len(), 1);
+        match &routes[0].action {
+            ResolvedAction::AppleScriptTemplate {
+                script,
+                template_id,
+            } => {
+                assert_eq!(template_id, "set_volume");
+                assert!(script.contains("42"), "script must contain the level");
+            }
+            _ => panic!("expected AppleScriptTemplate"),
+        }
+    }
+
+    #[test]
+    fn set_volume_clamps_to_100() {
+        let (_, routes) = resolve(&Intent::SetVolume(200), &no_browsers());
+        assert_eq!(routes[0].label, "Set volume to 100%");
+    }
+
+    // ── Display settings ──────────────────────────────────────────────────────
+
+    #[test]
+    fn display_settings_resolves_to_pref_pane() {
+        let (kind, routes) = resolve(&Intent::OpenDisplaySettings, &no_browsers());
+        assert_eq!(kind, CommandKind::LocalSystem);
+        match &routes[0].action {
+            ResolvedAction::OpenSystemPreferences { pane_url } => {
+                assert!(pane_url.contains("displays"));
+            }
+            _ => panic!("expected OpenSystemPreferences"),
+        }
+    }
+
+    // ── Downloads ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn downloads_resolves_to_open_path() {
+        let (kind, routes) = resolve(&Intent::RevealDownloads, &no_browsers());
+        assert_eq!(kind, CommandKind::Filesystem);
+        match &routes[0].action {
+            ResolvedAction::OpenPath { path } => {
+                assert!(path.ends_with("/Downloads"));
+            }
+            _ => panic!("expected OpenPath"),
+        }
+    }
+
+    // ── Unknown ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn unknown_resolves_to_empty_routes() {
+        let (kind, routes) = resolve(
+            &Intent::Unknown("gibberish command".to_string()),
+            &no_browsers(),
+        );
+        assert_eq!(kind, CommandKind::Unknown);
+        assert!(routes.is_empty());
+    }
+}
