@@ -37,7 +37,7 @@ pub fn append_and_save(
 pub fn save_history(entries: &[HistoryEntry]) -> Result<(), AppError> {
     let path = history_path().ok_or_else(|| AppError::IoError("no data dir".to_string()))?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent);
+        fs::create_dir_all(parent)?;
     }
     let json = serde_json::to_string_pretty(entries)?;
     fs::write(&path, json)?;
