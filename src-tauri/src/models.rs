@@ -157,10 +157,20 @@ pub struct BrowserInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppInfo {
+    pub name: String,
+    pub bundle_id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MachineInfo {
     pub hostname: String,
     pub username: String,
+    pub os_version: String,
+    pub architecture: String,
     pub installed_browsers: Vec<BrowserInfo>,
+    pub installed_apps: Vec<AppInfo>,
     pub home_dir: String,
 }
 
