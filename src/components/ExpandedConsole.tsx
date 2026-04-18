@@ -1,8 +1,9 @@
-import type { ExecutionResult, ParsedCommand, ResolvedRoute } from '../types/commands';
+import type { ExecutionResult, ParsedCommand, PermissionStatus, ResolvedRoute } from '../types/commands';
 import type { ExecutionEvent } from '../types/events';
 
 import { ConfirmationRail } from './ConfirmationRail';
 import { EventTimeline } from './EventTimeline';
+import { PermissionBanner } from './PermissionBanner';
 import { RiskBadge } from './RiskBadge';
 import { RouteSelector } from './RouteSelector';
 import './ExpandedConsole.css';
@@ -22,6 +23,7 @@ interface ExpandedConsoleProps {
   execState: ExecState;
   events: ExecutionEvent[];
   result: ExecutionResult | null;
+  permissionStatus: PermissionStatus | null;
   onSelectRoute: (index: number) => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -35,6 +37,7 @@ export function ExpandedConsole({
   execState,
   events,
   result,
+  permissionStatus,
   onSelectRoute,
   onConfirm,
   onCancel,
@@ -141,6 +144,9 @@ export function ExpandedConsole({
           </span>
         </div>
       )}
+
+      {/* Permission status — shown when any permission is not granted */}
+      {permissionStatus && <PermissionBanner status={permissionStatus} />}
     </div>
   );
 }

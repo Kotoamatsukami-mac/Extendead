@@ -2,8 +2,8 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::models::{
-    ApprovalStatus, ExecutionEvent, ExecutionEventKind, ExecutionResult,
-    HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
+    ApprovalStatus, ExecutionEvent, ExecutionEventKind, ExecutionResult, HistoryEntry, MachineInfo,
+    ParsedCommand, PermissionStatus,
 };
 use crate::provider_keys::ProviderKeyStatus;
 use crate::{executor, history, machine, parser, permissions, provider_keys, resolver, risk};
@@ -80,8 +80,7 @@ pub async fn execute_command(
         ApprovalStatus::Denied => return Err("command was denied".to_string()),
     }
 
-    let result = executor::execute(&command, route_index, &app)
-        .map_err(|e| e.to_string())?;
+    let result = executor::execute(&command, route_index, &app).map_err(|e| e.to_string())?;
 
     // Build history entry.
     let inverse = result.inverse_action.clone();
@@ -203,10 +202,7 @@ pub async fn undo_last(
 // ── set_window_mode ───────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn set_window_mode(
-    mode: String,
-    window: tauri::WebviewWindow,
-) -> Result<(), String> {
+pub async fn set_window_mode(mode: String, window: tauri::WebviewWindow) -> Result<(), String> {
     match mode.as_str() {
         "lounge" => {
             window
@@ -230,9 +226,7 @@ pub async fn toggle_always_on_top(
     enabled: bool,
     window: tauri::WebviewWindow,
 ) -> Result<(), String> {
-    window
-        .set_always_on_top(enabled)
-        .map_err(|e| e.to_string())
+    window.set_always_on_top(enabled).map_err(|e| e.to_string())
 }
 
 // ── refresh_machine_info ──────────────────────────────────────────────────────

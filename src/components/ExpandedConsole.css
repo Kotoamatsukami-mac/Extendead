@@ -338,3 +338,35 @@
   border: 1px solid color-mix(in srgb, var(--risk-color, white) 40%, transparent);
   background: color-mix(in srgb, var(--risk-color, white) 12%, transparent);
 }
+
+/* ── Permission banner ───────────────────────────────────────────────────────── */
+
+.permission-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--glass-border);
+  background: rgba(234, 179, 8, 0.06);
+  flex-shrink: 0;
+}
+
+.permission-banner__icon {
+  color: var(--accent-r1);
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.permission-banner__items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.permission-banner__item {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}

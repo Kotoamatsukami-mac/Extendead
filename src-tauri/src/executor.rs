@@ -43,9 +43,7 @@ pub fn execute<R: Runtime>(
     // For set_volume, capture the current volume before executing so the
     // inverse action can restore it precisely rather than keeping it None.
     let pre_volume: Option<u8> = match &route.action {
-        ResolvedAction::AppleScriptTemplate { template_id, .. }
-            if template_id == "set_volume" =>
-        {
+        ResolvedAction::AppleScriptTemplate { template_id, .. } if template_id == "set_volume" => {
             applescript::get_volume()
         }
         _ => None,
@@ -253,4 +251,3 @@ fn open_path(_path: &str) -> Result<String, AppError> {
         "Path opening requires macOS".to_string(),
     ))
 }
-

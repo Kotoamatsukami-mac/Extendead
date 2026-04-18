@@ -1,4 +1,4 @@
-use crate::models::{ApprovalStatus, CommandKind, ParsedCommand, RiskLevel, ResolvedAction};
+use crate::models::{ApprovalStatus, CommandKind, ParsedCommand, ResolvedAction, RiskLevel};
 
 /// Assign a risk level to a parsed command based on its kind and resolved actions.
 pub fn score(kind: &CommandKind, routes: &[crate::models::ResolvedRoute]) -> RiskLevel {

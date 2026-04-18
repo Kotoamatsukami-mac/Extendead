@@ -2,7 +2,8 @@ use crate::errors::AppError;
 use crate::models::{ParsedCommand, ResolvedAction};
 
 /// Approved AppleScript template IDs.
-static APPROVED_TEMPLATE_IDS: &[&str] = &["mute_volume", "unmute_volume", "set_volume", "get_volume"];
+static APPROVED_TEMPLATE_IDS: &[&str] =
+    &["mute_volume", "unmute_volume", "set_volume", "get_volume"];
 
 /// Approved URL hostnames for OpenUrl actions.
 static APPROVED_URL_HOSTS: &[&str] = &["www.youtube.com", "youtube.com"];
@@ -77,7 +78,9 @@ pub fn validate_action(action: &ResolvedAction) -> Result<(), AppError> {
 
 fn extract_host(url: &str) -> Option<String> {
     // Minimal host extraction without pulling in a URL parsing crate.
-    let without_scheme = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
     let host = without_scheme.split('/').next()?;
     Some(host.to_string())
 }
