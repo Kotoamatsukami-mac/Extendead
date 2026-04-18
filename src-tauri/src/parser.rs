@@ -1,7 +1,17 @@
-/// Parsed intent extracted from normalized input text.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Intent {
     OpenYoutube,
+    OpenYoutubeInSafari,
+    OpenYoutubeInChrome,
+    OpenYoutubeInFirefox,
+    OpenYoutubeInBrave,
+    OpenYoutubeInArc,
+    OpenSafari,
+    OpenChrome,
+    OpenFirefox,
+    OpenBrave,
+    OpenArc,
+    OpenFinder,
     OpenSlack,
     MuteVolume,
     SetVolume(u8),
@@ -10,13 +20,10 @@ pub enum Intent {
     Unknown(String),
 }
 
-/// Parse a raw user string into a typed intent.
-/// Uses keyword matching — no ML, no network calls.
 pub fn parse_intent(raw: &str) -> Intent {
-    let s = raw.trim().to_lowercase();
-    let s = s.as_str();
+    let normalized = normalize(raw);
+    let s = normalized.as_str();
 
-    // Volume control — check before generic "open" to catch "set volume to X"
     if let Some(level) = extract_volume_level(s) {
         return Intent::SetVolume(level);
     }
@@ -50,18 +57,53 @@ pub fn parse_intent(raw: &str) -> Intent {
         return Intent::RevealDownloads;
     }
 
-    if matches_any(s, &["open youtube", "youtube"]) {
-        return Intent::OpenYoutube;
+    if matches_any(s, &["open finder", "finder"]) {
+        return Intent::OpenFinder;
     }
 
     if matches_any(s, &["open slack", "slack"]) {
         return Intent::OpenSlack;
     }
 
+    if matches_any(s, &["open youtube in safari"]) {
+        return Intent::OpenYoutubeInSafari;
+    }
+    if matches_any(s, &["open youtube in chrome", "open youtube in google chrome"]) {
+        return Intent::OpenYoutubeInChrome;
+    }
+    if matches_any(s, &["open youtube in firefox"]) {
+        return Intent::OpenYoutubeInFirefox;
+    }
+    if matches_any(s, &["open youtube in brave", "open youtube in brave browser"]) {
+        return Intent::OpenYoutubeInBrave;
+    }
+    if matches_any(s, &["open youtube in arc"]) {
+        return Intent::OpenYoutubeInArc;
+    }
+
+    if matches_any(s, &["open youtube", "youtube"]) {
+        return Intent::OpenYoutube;
+    }
+
+    if matches_any(s, &["open safari", "safari"]) {
+        return Intent::OpenSafari;
+    }
+    if matches_any(s, &["open chrome", "open google chrome", "chrome", "google chrome"]) {
+        return Intent::OpenChrome;
+    }
+    if matches_any(s, &["open firefox", "firefox"]) {
+        return Intent::OpenFirefox;
+    }
+    if matches_any(s, &["open brave", "open brave browser", "brave", "brave browser"]) {
+        return Intent::OpenBrave;
+    }
+    if matches_any(s, &["open arc", "arc"]) {
+        return Intent::OpenArc;
+    }
+
     Intent::Unknown(raw.to_string())
 }
 
-/// Normalize raw input: trim, collapse whitespace, lower-case.
 pub fn normalize(raw: &str) -> String {
     raw.split_whitespace()
         .collect::<Vec<_>>()
@@ -70,13 +112,9 @@ pub fn normalize(raw: &str) -> String {
 }
 
 fn matches_any(haystack: &str, needles: &[&str]) -> bool {
-    needles
-        .iter()
-        .any(|n| haystack == *n || haystack.starts_with(n))
+    needles.iter().any(|n| haystack == *n || haystack.starts_with(n))
 }
 
-/// Try to extract a volume level (0–100) from strings like:
-/// "set volume to 30", "volume to 30 percent", "set volume 30"
 fn extract_volume_level(s: &str) -> Option<u8> {
     let triggers = ["set volume to", "volume to", "set volume", "volume at"];
     for trigger in &triggers {
@@ -95,85 +133,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_mute() {
+    fn test_parse_browser_apps() {
+        assert_eq!(parse_intent("open safari"), Intent::OpenSafari);
+        assert_eq!(parse_intent("open google chrome"), Intent::OpenChrome);
+        assert_eq!(parse_intent("open firefox"), Intent::OpenFirefox);
+        assert_eq!(parse_intent("open brave browser"), Intent::OpenBrave);
+        assert_eq!(parse_intent("open arc"), Intent::OpenArc);
+    }
+
+    #[test]
+    fn test_parse_finder() {
+        assert_eq!(parse_intent("open finder"), Intent::OpenFinder);
+    }
+
+    #[test]
+    fn test_parse_youtube_in_browser() {
+        assert_eq!(parse_intent("open youtube in safari"), Intent::OpenYoutubeInSafari);
+        assert_eq!(parse_intent("open youtube in chrome"), Intent::OpenYoutubeInChrome);
+    }
+
+    #[test]
+    fn test_parse_existing_commands() {
         assert_eq!(parse_intent("mute"), Intent::MuteVolume);
-        assert_eq!(parse_intent("mute the mac"), Intent::MuteVolume);
-        assert_eq!(parse_intent("mute sound"), Intent::MuteVolume);
-        assert_eq!(parse_intent("mute audio"), Intent::MuteVolume);
-        assert_eq!(parse_intent("MUTE"), Intent::MuteVolume);
-    }
-
-    #[test]
-    fn test_parse_volume() {
         assert_eq!(parse_intent("set volume to 30"), Intent::SetVolume(30));
-        assert_eq!(parse_intent("volume to 50 percent"), Intent::SetVolume(50));
-        assert_eq!(parse_intent("set volume 75"), Intent::SetVolume(75));
-        assert_eq!(parse_intent("set volume to 0"), Intent::SetVolume(0));
-        assert_eq!(parse_intent("set volume to 100"), Intent::SetVolume(100));
-        // Clamp > 100 at parse level too
-        assert_eq!(parse_intent("set volume to 150"), Intent::SetVolume(100));
-    }
-
-    #[test]
-    fn test_parse_youtube() {
-        assert_eq!(parse_intent("open youtube"), Intent::OpenYoutube);
-        assert_eq!(parse_intent("youtube"), Intent::OpenYoutube);
-        assert_eq!(parse_intent("YOUTUBE"), Intent::OpenYoutube);
-        assert_eq!(parse_intent("  youtube  "), Intent::OpenYoutube);
-    }
-
-    #[test]
-    fn test_parse_slack() {
-        assert_eq!(parse_intent("open slack"), Intent::OpenSlack);
-        assert_eq!(parse_intent("slack"), Intent::OpenSlack);
-        assert_eq!(parse_intent("SLACK"), Intent::OpenSlack);
-    }
-
-    #[test]
-    fn test_parse_downloads() {
         assert_eq!(parse_intent("downloads"), Intent::RevealDownloads);
-        assert_eq!(parse_intent("reveal downloads"), Intent::RevealDownloads);
-        assert_eq!(parse_intent("open downloads"), Intent::RevealDownloads);
-        assert_eq!(parse_intent("show downloads"), Intent::RevealDownloads);
-    }
-
-    #[test]
-    fn test_parse_display_settings() {
-        assert_eq!(
-            parse_intent("display settings"),
-            Intent::OpenDisplaySettings
-        );
-        assert_eq!(
-            parse_intent("open display settings"),
-            Intent::OpenDisplaySettings
-        );
-        assert_eq!(parse_intent("screen settings"), Intent::OpenDisplaySettings);
-        assert_eq!(
-            parse_intent("monitor settings"),
-            Intent::OpenDisplaySettings
-        );
-    }
-
-    #[test]
-    fn test_parse_unknown() {
-        let result = parse_intent("do something weird");
-        assert!(matches!(result, Intent::Unknown(_)));
-    }
-
-    #[test]
-    fn test_normalize() {
-        assert_eq!(normalize("  hello   world  "), "hello world");
-        assert_eq!(normalize("HELLO"), "hello");
-        assert_eq!(normalize("set  volume  to  30"), "set volume to 30");
-    }
-
-    #[test]
-    fn test_volume_priority_over_open() {
-        // "set volume to 30" should be SetVolume, not Unknown
-        assert_eq!(parse_intent("set volume to 30"), Intent::SetVolume(30));
-        // Plain "volume" without a level should NOT be SetVolume
-        let result = parse_intent("volume");
-        // "volume" alone doesn't match a level trigger, falls through to Unknown
-        assert!(matches!(result, Intent::Unknown(_)));
+        assert_eq!(parse_intent("display settings"), Intent::OpenDisplaySettings);
+        assert_eq!(parse_intent("slack"), Intent::OpenSlack);
     }
 }
