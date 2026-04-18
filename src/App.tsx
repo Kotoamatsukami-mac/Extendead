@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DeveloperPanel } from './components/DeveloperPanel';
 import { ExpandedConsole } from './components/ExpandedConsole';
 import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
 import { useMachineState } from './hooks/useMachineState';
 import { usePermissionStatus } from './hooks/usePermissionStatus';
-import type { ExecutionResult, HistoryEntry, ParsedCommand } from './types/commands';
+import type {
+  ExecutionResult,
+  HistoryEntry,
+  ParsedCommand,
+  ProviderKeyStatus,
+} from './types/commands';
 import type { ExecutionEvent } from './types/events';
 
 type AppMode = 'lounge' | 'expanded';
@@ -17,6 +23,20 @@ type ExecState =
   | 'done'
   | 'error';
 
+const DEV_PANEL_UNLOCK = '//engine';
+
+const BUILT_IN_PREDICTIONS = [
+  'open youtube',
+  'open safari',
+  'open chrome',
+  'open finder',
+  'open slack',
+  'display settings',
+  'downloads',
+  'set volume to 40',
+  DEV_PANEL_UNLOCK,
+] as const;
+
 export function App() {
   const [mode, setMode] = useState<AppMode>('lounge');
   const [inputValue, setInputValue] = useState('');
@@ -27,6 +47,9 @@ export function App() {
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
+  const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
+  const [developerBusy, setDeveloperBusy] = useState(false);
   // Counter incremented whenever the strip should regain focus.
   const [focusTrigger, setFocusTrigger] = useState(0);
 
@@ -45,6 +68,7 @@ export function App() {
 
   const bridge = useCommandBridge({
     onParseStart: () => {
+      setShowDeveloperPanel(false);
       setExecState('parsing');
       setEvents([]);
       setResult(null);
@@ -129,13 +153,40 @@ export function App() {
     bridge.approveAndExecute(autoExec.cmd.id, autoExec.routeIdx);
   }, [autoExec, bridge]);
 
+  const prediction = useMemo(
+    () => getPrediction(inputValue, history),
+    [inputValue, history],
+  );
+
   const handleSubmit = useCallback(
     (value: string) => {
-      if (!value.trim()) return;
-      bridge.parseCommand(value);
+      const trimmed = value.trim();
+      if (!trimmed) return;
+
+      if (trimmed.toLowerCase() === DEV_PANEL_UNLOCK) {
+        setShowDeveloperPanel(true);
+        setMode('expanded');
+        setInputValue('');
+        setParsedCommand(null);
+        setSelectedRouteIndex(null);
+        setExecState('idle');
+        setEvents([]);
+        setResult(null);
+        setAutoExec(null);
+        void refreshDeveloperStatus();
+        return;
+      }
+
+      bridge.parseCommand(trimmed);
     },
     [bridge],
   );
+
+  const handleAcceptPrediction = useCallback(() => {
+    if (prediction) {
+      setInputValue(prediction);
+    }
+  }, [prediction]);
 
   const handleSelectRoute = useCallback(
     (index: number) => {
@@ -184,6 +235,41 @@ export function App() {
     bridge.toggleAlwaysOnTop(next);
   }, [alwaysOnTop, bridge]);
 
+  const refreshDeveloperStatus = useCallback(async () => {
+    setDeveloperBusy(true);
+    try {
+      const status = await bridge.getProviderKeyStatus('perplexity');
+      setPrimaryProviderStatus(status);
+    } finally {
+      setDeveloperBusy(false);
+    }
+  }, [bridge]);
+
+  const handleLinkPrimaryEngine = useCallback(
+    async (value: string) => {
+      setDeveloperBusy(true);
+      try {
+        await bridge.setProviderKey('perplexity', value);
+        const status = await bridge.getProviderKeyStatus('perplexity');
+        setPrimaryProviderStatus(status);
+      } finally {
+        setDeveloperBusy(false);
+      }
+    },
+    [bridge],
+  );
+
+  const handleClearPrimaryEngine = useCallback(async () => {
+    setDeveloperBusy(true);
+    try {
+      await bridge.deleteProviderKey('perplexity');
+      const status = await bridge.getProviderKeyStatus('perplexity');
+      setPrimaryProviderStatus(status);
+    } finally {
+      setDeveloperBusy(false);
+    }
+  }, [bridge]);
+
   function reset() {
     setMode('lounge');
     setInputValue('');
@@ -193,6 +279,7 @@ export function App() {
     setEvents([]);
     setResult(null);
     setAutoExec(null);
+    setShowDeveloperPanel(false);
     // Trigger strip focus after returning to lounge mode.
     setFocusTrigger((n) => n + 1);
   }
@@ -224,11 +311,13 @@ export function App() {
       {mode === 'lounge' ? (
         <LoungeStrip
           inputValue={inputValue}
+          prediction={prediction}
           execState={execState}
           alwaysOnTop={alwaysOnTop}
           focusTrigger={focusTrigger}
           onInput={setInputValue}
           onSubmit={handleSubmit}
+          onAcceptPrediction={handleAcceptPrediction}
           onEscape={handleCollapse}
           onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         />
@@ -236,31 +325,63 @@ export function App() {
         <>
           <LoungeStrip
             inputValue={inputValue}
+            prediction={prediction}
             execState={execState}
             alwaysOnTop={alwaysOnTop}
             focusTrigger={focusTrigger}
             onInput={setInputValue}
             onSubmit={handleSubmit}
+            onAcceptPrediction={handleAcceptPrediction}
             onEscape={handleCollapse}
             onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
           />
-          <ExpandedConsole
-            parsedCommand={parsedCommand}
-            selectedRouteIndex={selectedRouteIndex}
-            execState={execState}
-            events={events}
-            result={result}
-            permissionStatus={permissionStatus}
-            history={history}
-            onSelectRoute={handleSelectRoute}
-            onConfirm={handleConfirm}
-            onCancel={handleCancel}
-            onUndo={handleUndo}
-            onCollapse={handleCollapse}
-          />
+          {showDeveloperPanel ? (
+            <DeveloperPanel
+              status={primaryProviderStatus}
+              busy={developerBusy}
+              onRefresh={() => void refreshDeveloperStatus()}
+              onLink={handleLinkPrimaryEngine}
+              onClear={handleClearPrimaryEngine}
+              onClose={handleCollapse}
+            />
+          ) : (
+            <ExpandedConsole
+              parsedCommand={parsedCommand}
+              selectedRouteIndex={selectedRouteIndex}
+              execState={execState}
+              events={events}
+              result={result}
+              permissionStatus={permissionStatus}
+              history={history}
+              onSelectRoute={handleSelectRoute}
+              onConfirm={handleConfirm}
+              onCancel={handleCancel}
+              onUndo={handleUndo}
+              onCollapse={handleCollapse}
+            />
+          )}
         </>
       )}
     </div>
   );
 }
 
+function getPrediction(inputValue: string, history: HistoryEntry[]): string {
+  const normalized = inputValue.trim().toLowerCase();
+  if (!normalized) return '';
+
+  const candidates = [...history.map((entry) => entry.command.raw_input), ...BUILT_IN_PREDICTIONS];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    const lowered = candidate.toLowerCase();
+    if (seen.has(lowered)) continue;
+    seen.add(lowered);
+
+    if (lowered.startsWith(normalized) && lowered !== normalized) {
+      return candidate;
+    }
+  }
+
+  return '';
+}
