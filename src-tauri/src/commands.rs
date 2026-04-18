@@ -226,7 +226,16 @@ pub async fn toggle_always_on_top(
     enabled: bool,
     window: tauri::WebviewWindow,
 ) -> Result<(), String> {
-    window.set_always_on_top(enabled).map_err(|e| e.to_string())
+    window
+        .set_always_on_top(enabled)
+        .map_err(|e| e.to_string())?;
+
+    // Persist preference so it survives restarts.
+    let mut config = crate::config::load_config();
+    config.always_on_top = enabled;
+    let _ = crate::config::save_config(&config);
+
+    Ok(())
 }
 
 // ── refresh_machine_info ──────────────────────────────────────────────────────

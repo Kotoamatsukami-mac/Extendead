@@ -26,6 +26,29 @@ fn emit<R: Runtime>(app: &AppHandle<R>, event: ExecutionEvent) {
     let _ = app.emit(EXECUTION_EVENT_NAME, ExecutionEventPayload { event });
 }
 
+/// Map an AppError to the appropriate ExecutionOutcome.
+/// PermissionDenied must become Blocked — never silently downgraded.
+fn outcome_for_error(e: &AppError) -> ExecutionOutcome {
+    match e {
+        AppError::PermissionDenied(_) => ExecutionOutcome::Blocked,
+        AppError::ValidationError(_) | AppError::ShellPolicyViolation(_) => {
+            ExecutionOutcome::Blocked
+        }
+        _ => ExecutionOutcome::RecoverableFailure,
+    }
+}
+
+/// Build a concise, operator-readable failure message.
+fn human_message_for_error(e: &AppError) -> String {
+    match e {
+        AppError::PermissionDenied(detail) => {
+            format!("✗ Permission required — {detail}")
+        }
+        AppError::ValidationError(detail) => format!("✗ Blocked: {detail}"),
+        _ => format!("✗ {e}"),
+    }
+}
+
 /// Execute a specific route on an approved command.
 pub fn execute<R: Runtime>(
     command: &ParsedCommand,
@@ -88,6 +111,8 @@ pub fn execute<R: Runtime>(
             })
         }
         Err(e) => {
+            let outcome = outcome_for_error(&e);
+            let human_message = human_message_for_error(&e);
             let msg = e.to_string();
             emit(
                 app,
@@ -95,9 +120,9 @@ pub fn execute<R: Runtime>(
             );
             Ok(ExecutionResult {
                 command_id: command_id.to_string(),
-                outcome: ExecutionOutcome::RecoverableFailure,
-                message: msg.clone(),
-                human_message: format!("✗ {msg}"),
+                outcome,
+                message: msg,
+                human_message,
                 duration_ms,
                 inverse_action: None,
             })
@@ -124,7 +149,7 @@ fn dispatch_action<R: Runtime>(
                     format!("Opening {url} in {browser_name}"),
                 ),
             );
-            open_url(url, browser_bundle)
+            open_url(url, browser_bundle, browser_name)
         }
         ResolvedAction::OpenApp {
             bundle_id,
@@ -140,16 +165,26 @@ fn dispatch_action<R: Runtime>(
             );
             open_app(app_name, bundle_id)
         }
-        ResolvedAction::AppleScriptTemplate { script, .. } => {
+        ResolvedAction::AppleScriptTemplate {
+            script,
+            template_id,
+        } => {
+            let progress_msg = match template_id.as_str() {
+                "mute_volume" => "Muting system audio output".to_string(),
+                "unmute_volume" => "Unmuting system audio output".to_string(),
+                "set_volume" => "Setting output volume".to_string(),
+                _ => "Running AppleScript".to_string(),
+            };
             emit(
                 app,
-                new_event(
-                    command_id,
-                    ExecutionEventKind::Progress,
-                    "Running AppleScript template".to_string(),
-                ),
+                new_event(command_id, ExecutionEventKind::Progress, progress_msg),
             );
-            applescript::run_validated_script(script)
+            applescript::run_validated_script(script).map(|_| match template_id.as_str() {
+                "mute_volume" => "System audio muted".to_string(),
+                "unmute_volume" => "System audio unmuted".to_string(),
+                "set_volume" => "Output volume set".to_string(),
+                _ => "Done".to_string(),
+            })
         }
         ResolvedAction::OpenSystemPreferences { pane_url } => {
             emit(
@@ -157,10 +192,10 @@ fn dispatch_action<R: Runtime>(
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
-                    format!("Opening system preferences: {pane_url}"),
+                    "Opening System Settings".to_string(),
                 ),
             );
-            open_url(pane_url, "")
+            open_url(pane_url, "", "System Settings")
         }
         ResolvedAction::OpenPath { path } => {
             emit(
@@ -168,7 +203,7 @@ fn dispatch_action<R: Runtime>(
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
-                    format!("Revealing path: {path}"),
+                    format!("Revealing {path} in Finder"),
                 ),
             );
             open_path(path)
@@ -177,7 +212,7 @@ fn dispatch_action<R: Runtime>(
 }
 
 #[cfg(target_os = "macos")]
-fn open_url(url: &str, browser_bundle: &str) -> Result<String, AppError> {
+fn open_url(url: &str, browser_bundle: &str, browser_name: &str) -> Result<String, AppError> {
     let mut cmd = std::process::Command::new("open");
     if !browser_bundle.is_empty() {
         cmd.args(["-b", browser_bundle]);
@@ -187,7 +222,7 @@ fn open_url(url: &str, browser_bundle: &str) -> Result<String, AppError> {
         .status()
         .map_err(|e| AppError::ExecutionError(format!("open failed: {e}")))?;
     if status.success() {
-        Ok(format!("Opened {url}"))
+        Ok(format!("Opened {url} in {browser_name}"))
     } else {
         Err(AppError::ExecutionError(format!(
             "open exited with status {status}"
@@ -196,7 +231,7 @@ fn open_url(url: &str, browser_bundle: &str) -> Result<String, AppError> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn open_url(_url: &str, _browser_bundle: &str) -> Result<String, AppError> {
+fn open_url(_url: &str, _browser_bundle: &str, _browser_name: &str) -> Result<String, AppError> {
     Err(AppError::PlatformNotSupported(
         "URL opening requires macOS".to_string(),
     ))
@@ -215,7 +250,7 @@ fn open_app(app_name: &str, bundle_id: &str) -> Result<String, AppError> {
         .status()
         .map_err(|e| AppError::ExecutionError(format!("open failed: {e}")))?;
     if status.success() {
-        Ok(format!("Launched {app_name}"))
+        Ok(format!("{app_name} launched"))
     } else {
         Err(AppError::ExecutionError(format!(
             "open {app_name} exited with status {status}"
@@ -237,7 +272,7 @@ fn open_path(path: &str) -> Result<String, AppError> {
         .status()
         .map_err(|e| AppError::ExecutionError(format!("open path failed: {e}")))?;
     if status.success() {
-        Ok(format!("Opened {path}"))
+        Ok(format!("Opened {path} in Finder"))
     } else {
         Err(AppError::ExecutionError(format!(
             "open {path} exited with status {status}"

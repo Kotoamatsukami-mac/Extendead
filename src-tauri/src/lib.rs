@@ -77,12 +77,18 @@ pub fn run() {
             use tauri::Manager;
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-            // Scan machine info asynchronously so startup feels instant.
+            // Scan machine info so resolver has browser list immediately.
             let state = app.state::<AppState>();
             let info = machine::scan_machine();
             {
                 let mut inner = state.inner.lock().expect("state lock on setup");
                 inner.machine_info = Some(info);
+            }
+
+            // Load persisted config and apply always_on_top preference.
+            let cfg = config::load_config();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_always_on_top(cfg.always_on_top);
             }
 
             // Register the global toggle shortcut.

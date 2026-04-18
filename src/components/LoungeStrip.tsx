@@ -6,6 +6,8 @@ interface LoungeStripProps {
   inputValue: string;
   execState: 'idle' | 'parsing' | 'awaiting_route' | 'awaiting_confirm' | 'executing' | 'done' | 'error';
   alwaysOnTop: boolean;
+  /** Increment to trigger a re-focus of the input (e.g. after collapse). */
+  focusTrigger: number;
   onInput: (value: string) => void;
   onSubmit: (value: string) => void;
   onEscape: () => void;
@@ -16,6 +18,7 @@ export function LoungeStrip({
   inputValue,
   execState,
   alwaysOnTop,
+  focusTrigger,
   onInput,
   onSubmit,
   onEscape,
@@ -23,9 +26,10 @@ export function LoungeStrip({
 }: LoungeStripProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Focus on mount and whenever focusTrigger increments (e.g. after collapse).
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
+  }, [focusTrigger]);
 
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';

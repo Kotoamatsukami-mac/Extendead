@@ -4,7 +4,7 @@ import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
 import { useMachineState } from './hooks/useMachineState';
 import { usePermissionStatus } from './hooks/usePermissionStatus';
-import type { ExecutionResult, ParsedCommand } from './types/commands';
+import type { ExecutionResult, HistoryEntry, ParsedCommand } from './types/commands';
 import type { ExecutionEvent } from './types/events';
 
 type AppMode = 'lounge' | 'expanded';
@@ -26,6 +26,9 @@ export function App() {
   const [events, setEvents] = useState<ExecutionEvent[]>([]);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // Counter incremented whenever the strip should regain focus.
+  const [focusTrigger, setFocusTrigger] = useState(0);
 
   // Used to trigger no-approval auto-execution after parse settles.
   const [autoExec, setAutoExec] = useState<{
@@ -92,6 +95,8 @@ export function App() {
     onExecuted: (res) => {
       setResult(res);
       setExecState(res.outcome === 'success' ? 'done' : 'error');
+      // Refresh history after execution so the drawer shows the latest entry.
+      bridge.getHistory().then(setHistory);
     },
     onExecuteError: (err) => {
       setExecState('error');
@@ -104,6 +109,12 @@ export function App() {
       });
     },
   });
+
+  // Load history on mount.
+  useEffect(() => {
+    bridge.getHistory().then(setHistory);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Expand/collapse window with Rust when mode changes.
   useEffect(() => {
@@ -182,6 +193,8 @@ export function App() {
     setEvents([]);
     setResult(null);
     setAutoExec(null);
+    // Trigger strip focus after returning to lounge mode.
+    setFocusTrigger((n) => n + 1);
   }
 
   // Global keyboard: Escape collapses; Y/N confirm or cancel when awaiting approval.
@@ -213,6 +226,7 @@ export function App() {
           inputValue={inputValue}
           execState={execState}
           alwaysOnTop={alwaysOnTop}
+          focusTrigger={focusTrigger}
           onInput={setInputValue}
           onSubmit={handleSubmit}
           onEscape={handleCollapse}
@@ -224,6 +238,7 @@ export function App() {
             inputValue={inputValue}
             execState={execState}
             alwaysOnTop={alwaysOnTop}
+            focusTrigger={focusTrigger}
             onInput={setInputValue}
             onSubmit={handleSubmit}
             onEscape={handleCollapse}
@@ -236,6 +251,7 @@ export function App() {
             events={events}
             result={result}
             permissionStatus={permissionStatus}
+            history={history}
             onSelectRoute={handleSelectRoute}
             onConfirm={handleConfirm}
             onCancel={handleCancel}
@@ -247,5 +263,4 @@ export function App() {
     </div>
   );
 }
-
 

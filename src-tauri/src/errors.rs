@@ -11,6 +11,10 @@ pub enum AppError {
     SerializationError(String),
     StateLockError,
     ShellPolicyViolation(String),
+    /// A required system permission (Accessibility, Apple Events, etc.) has been
+    /// denied by the user. Execution must be blocked and the UI must surface a
+    /// concrete next-action message.
+    PermissionDenied(String),
 }
 
 impl fmt::Display for AppError {
@@ -24,6 +28,7 @@ impl fmt::Display for AppError {
             AppError::SerializationError(s) => write!(f, "Serialization error: {s}"),
             AppError::StateLockError => write!(f, "State lock poisoned"),
             AppError::ShellPolicyViolation(s) => write!(f, "Shell policy violation: {s}"),
+            AppError::PermissionDenied(s) => write!(f, "Permission denied: {s}"),
         }
     }
 }

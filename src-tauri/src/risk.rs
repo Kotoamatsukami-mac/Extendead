@@ -82,3 +82,181 @@ pub fn annotate(mut cmd: ParsedCommand) -> ParsedCommand {
     cmd.approval_status = initial_approval_status(req);
     cmd
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ResolvedRoute;
+
+    fn make_route(action: ResolvedAction) -> ResolvedRoute {
+        ResolvedRoute {
+            label: "Test".to_string(),
+            description: "Test route".to_string(),
+            action,
+        }
+    }
+
+    // ── Risk scoring ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn open_url_is_r1() {
+        let action = ResolvedAction::OpenUrl {
+            url: "https://www.youtube.com".to_string(),
+            browser_bundle: String::new(),
+            browser_name: "Safari".to_string(),
+        };
+        let risk = score(&CommandKind::MixedWorkflow, &[make_route(action)]);
+        assert_eq!(risk, RiskLevel::R1);
+    }
+
+    #[test]
+    fn open_app_is_r0() {
+        let action = ResolvedAction::OpenApp {
+            bundle_id: "com.tinyspeck.slackmacgap".to_string(),
+            app_name: "Slack".to_string(),
+        };
+        let risk = score(&CommandKind::AppControl, &[make_route(action)]);
+        assert_eq!(risk, RiskLevel::R0);
+    }
+
+    #[test]
+    fn mute_volume_template_is_r1() {
+        let action = ResolvedAction::AppleScriptTemplate {
+            script: "set volume with output muted".to_string(),
+            template_id: "mute_volume".to_string(),
+        };
+        let risk = score(&CommandKind::LocalSystem, &[make_route(action)]);
+        assert_eq!(risk, RiskLevel::R1);
+    }
+
+    #[test]
+    fn set_volume_template_is_r1() {
+        let action = ResolvedAction::AppleScriptTemplate {
+            script: "set volume output volume 50".to_string(),
+            template_id: "set_volume".to_string(),
+        };
+        let risk = score(&CommandKind::LocalSystem, &[make_route(action)]);
+        assert_eq!(risk, RiskLevel::R1);
+    }
+
+    #[test]
+    fn unknown_applescript_template_is_r2() {
+        let action = ResolvedAction::AppleScriptTemplate {
+            script: "do some script".to_string(),
+            template_id: "unknown_template".to_string(),
+        };
+        let risk = score(&CommandKind::LocalSystem, &[make_route(action)]);
+        assert_eq!(risk, RiskLevel::R2);
+    }
+
+    #[test]
+    fn open_system_preferences_is_r0() {
+        let action = ResolvedAction::OpenSystemPreferences {
+            pane_url: "x-apple.systempreferences:com.apple.preference.displays".to_string(),
+        };
+        let risk = score(&CommandKind::LocalSystem, &[make_route(action)]);
+        assert_eq!(risk, RiskLevel::R0);
+    }
+
+    #[test]
+    fn filesystem_open_path_is_r0() {
+        let action = ResolvedAction::OpenPath {
+            path: "/Users/user/Downloads".to_string(),
+        };
+        let risk = score(&CommandKind::Filesystem, &[make_route(action)]);
+        assert_eq!(risk, RiskLevel::R0);
+    }
+
+    #[test]
+    fn empty_routes_defaults_r0() {
+        let risk = score(&CommandKind::Unknown, &[]);
+        assert_eq!(risk, RiskLevel::R0);
+    }
+
+    #[test]
+    fn highest_risk_wins_across_routes() {
+        let r0_action = ResolvedAction::OpenApp {
+            bundle_id: "com.tinyspeck.slackmacgap".to_string(),
+            app_name: "Slack".to_string(),
+        };
+        let r1_action = ResolvedAction::OpenUrl {
+            url: "https://www.youtube.com".to_string(),
+            browser_bundle: String::new(),
+            browser_name: "Safari".to_string(),
+        };
+        let risk = score(
+            &CommandKind::MixedWorkflow,
+            &[make_route(r0_action), make_route(r1_action)],
+        );
+        assert_eq!(risk, RiskLevel::R1);
+    }
+
+    // ── Approval gate ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn r0_does_not_require_approval() {
+        assert!(!requires_approval(&RiskLevel::R0));
+    }
+
+    #[test]
+    fn r1_requires_approval() {
+        assert!(requires_approval(&RiskLevel::R1));
+    }
+
+    #[test]
+    fn r2_requires_approval() {
+        assert!(requires_approval(&RiskLevel::R2));
+    }
+
+    #[test]
+    fn r3_requires_approval() {
+        assert!(requires_approval(&RiskLevel::R3));
+    }
+
+    // ── Inverse actions ───────────────────────────────────────────────────────
+
+    #[test]
+    fn mute_has_unmute_inverse() {
+        let action = ResolvedAction::AppleScriptTemplate {
+            script: "set volume with output muted".to_string(),
+            template_id: "mute_volume".to_string(),
+        };
+        let inv = inverse_action(&action);
+        assert!(inv.is_some());
+        match inv.unwrap() {
+            ResolvedAction::AppleScriptTemplate { template_id, .. } => {
+                assert_eq!(template_id, "unmute_volume");
+            }
+            _ => panic!("expected AppleScriptTemplate"),
+        }
+    }
+
+    #[test]
+    fn set_volume_has_no_static_inverse() {
+        // Inverse is captured dynamically at execution time.
+        let action = ResolvedAction::AppleScriptTemplate {
+            script: "set volume output volume 30".to_string(),
+            template_id: "set_volume".to_string(),
+        };
+        assert!(inverse_action(&action).is_none());
+    }
+
+    #[test]
+    fn open_url_has_no_inverse() {
+        let action = ResolvedAction::OpenUrl {
+            url: "https://www.youtube.com".to_string(),
+            browser_bundle: String::new(),
+            browser_name: "Safari".to_string(),
+        };
+        assert!(inverse_action(&action).is_none());
+    }
+
+    #[test]
+    fn open_app_has_no_inverse() {
+        let action = ResolvedAction::OpenApp {
+            bundle_id: "com.tinyspeck.slackmacgap".to_string(),
+            app_name: "Slack".to_string(),
+        };
+        assert!(inverse_action(&action).is_none());
+    }
+}

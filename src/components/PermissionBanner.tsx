@@ -33,13 +33,14 @@ export function PermissionBanner({ status }: PermissionBannerProps) {
       <div className="permission-banner__items">
         {accessWarn && (
           <span className="permission-banner__item">
-            Accessibility: {stateLabel(status.accessibility)} — AppleScript and UI automation
-            require this permission in System Settings → Privacy & Security → Accessibility
+            Accessibility: {stateLabel(status.accessibility)} — required for UI automation.
+            Grant in System Settings → Privacy & Security → Accessibility.
           </span>
         )}
         {eventsWarn && (
           <span className="permission-banner__item">
-            Apple Events: {stateLabel(status.apple_events)}
+            Apple Events: {stateLabel(status.apple_events)} — required for volume &amp; audio
+            commands. Grant in System Settings → Privacy & Security → Automation.
           </span>
         )}
       </div>
