@@ -1,13 +1,16 @@
 # macOS Runtime Verification Guide
 
-This document covers what to verify on a real macOS machine. CI validates
-compilation, formatting, and unit tests. Runtime behavior requires an Apple
-Silicon or Intel Mac running macOS 13 (Ventura) or later.
+This document covers what to verify on a real macOS machine.
+
+CI validates compilation, formatting, and unit tests. A macOS Intel smoke job also
+verifies that `tauri build --no-bundle` compiles on GitHub’s macOS Intel runner.
+Runtime behavior still requires testing on a real Mac.
 
 ## Build for testing
 
+From the repo root:
+
 ```bash
-cd ~/Desktop/anbu/Extended
 npm run tauri build         # production bundle → src-tauri/target/release/bundle/
 # or for faster dev cycle:
 npm run tauri dev
@@ -21,7 +24,7 @@ npm run tauri dev
 - [ ] Lounge strip appears centered on screen, slim (50 px tall), transparent glass background
 - [ ] No dock icon (skipTaskbar active)
 - [ ] Strip is always-on-top by default (⊛ pin button shows active state)
-- [ ] **Phase 2**: always-on-top state is persisted — relaunching the app restores the previous pin state
+- [ ] Always-on-top state is persisted — relaunching the app restores the previous pin state
 
 ---
 
@@ -39,7 +42,7 @@ npm run tauri dev
 - [ ] Click the ⊛ pin button → strip no longer floats above all windows
 - [ ] Click again → strip goes back to always-on-top
 - [ ] State survives mode transitions (lounge ↔ expanded)
-- [ ] **Phase 2**: preference is written to `~/Library/Application Support/extendead/config.json` and applied on next launch
+- [ ] Preference is written to `~/Library/Application Support/extendead/config.json` and applied on next launch
 
 ---
 
@@ -56,7 +59,7 @@ Type: `open youtube`
 - [ ] Press `N` → console collapses, command is denied
 - [ ] Press `Esc` → same as N
 - [ ] Undo button is **not** shown (OpenUrl has no inverse)
-- [ ] **Phase 2**: event timeline shows concrete "Opening https://www.youtube.com in Safari" message
+- [ ] Event timeline shows concrete "Opening https://www.youtube.com in Safari" message
 
 ---
 
@@ -68,7 +71,7 @@ Type: `slack` or `open slack`
 - [ ] Risk `R0`, no confirmation required — executes immediately
 - [ ] Slack launches (or comes to front)
 - [ ] Event timeline shows `Started → Progress → Completed`
-- [ ] **Phase 2**: result message reads "✓ Open Slack", progress says "Launching Slack"
+- [ ] Result message reads "✓ Open Slack", progress says "Launching Slack"
 
 ---
 
@@ -78,7 +81,7 @@ Type: `mute`
 
 - [ ] Intent: `local system`, Risk: `R1`, confirmation required
 - [ ] Confirm → system audio mutes
-- [ ] **Phase 2**: result card shows `✓ Mute Mac`, event timeline shows "Muting system audio output"
+- [ ] Result card shows `✓ Mute Mac`, event timeline shows "Muting system audio output"
 - [ ] **Undo** button appears → click it → system unmutes
 
 ---
@@ -90,7 +93,7 @@ Type: `set volume to 40`
 - [ ] Intent: `local system`, Risk: `R1`, confirmation required
 - [ ] Confirm → system volume changes to 40 %
 - [ ] Result card shows duration
-- [ ] **Phase 2**: event timeline shows "Setting output volume"
+- [ ] Event timeline shows "Setting output volume"
 - [ ] Undo button appears → click → volume returns to the pre-execution level (captured before execution)
 
 ---
@@ -102,7 +105,7 @@ Type: `display settings`
 - [ ] Risk: `R0`, no confirmation, executes immediately
 - [ ] System Settings → Displays pane opens
 - [ ] No Undo button shown
-- [ ] **Phase 2**: event timeline shows "Opening System Settings"
+- [ ] Event timeline shows "Opening System Settings"
 
 ---
 
@@ -113,38 +116,30 @@ Type: `downloads`
 - [ ] Risk: `R0`, no confirmation
 - [ ] Finder opens ~/Downloads
 - [ ] No Undo button
-- [ ] **Phase 2**: event timeline shows "Revealing ~/Downloads in Finder"
+- [ ] Event timeline shows "Revealing ~/Downloads in Finder"
 
 ---
 
-## 10. Permission prompts
+## 10. Permission prompts and status
 
 ### Accessibility
-First time an AppleScript command (mute, volume) runs, macOS may prompt for
-Accessibility access.
+Extendead reports Accessibility permission via the native `AXIsProcessTrusted()` API.
+This is required for **UI automation** features (click/type) in later phases.
 
-- [ ] System Settings → Privacy & Security → Accessibility dialog appears
-- [ ] Granting permission → command proceeds
-- [ ] Denying → command returns an error result card, not a crash
+- [ ] If denied, the amber ⚠ banner shows: "Accessibility: denied — required for UI automation."
+- [ ] Grant in System Settings → Privacy & Security → Accessibility, then relaunch and re-check
 
-### Apple Events
-osascript requires Apple Events permission.
+### Apple Events / Automation
+Current Phase 1 volume/mute AppleScript does **not** target other apps, so it typically does
+not trigger an Automation prompt.
 
-- [ ] First use triggers Apple Events prompt
-- [ ] **Phase 2**: If Apple Events is denied, execution returns `blocked` outcome — NOT silent failure
-- [ ] **Phase 2**: Result card shows `✗ Permission required — Apple Events permission required. Grant access in System Settings → Privacy & Security → Automation.`
-- [ ] **Phase 2**: The amber ⚠ banner in the console shows actionable text: "Grant in System Settings → Privacy & Security → Automation."
-
-### Permission banner
-- [ ] Open expanded console (type any command)
-- [ ] If Accessibility is `unknown` or `denied`, the amber ⚠ banner appears at the bottom
-- [ ] **Phase 2**: Accessibility banner says "required for UI automation. Grant in System Settings → Privacy & Security → Accessibility."
-- [ ] **Phase 2**: Apple Events banner says "required for volume & audio commands. Grant in System Settings → Privacy & Security → Automation."
-- [ ] If both permissions are granted, no banner is shown
+- [ ] If Apple Events is denied/blocked at the process level, execution returns `blocked` outcome — not silent failure
+- [ ] Result card shows `✗ Permission required — ...` with a concrete next action
+- [ ] The amber ⚠ banner shows: "Apple Events: denied/unknown — required for volume & audio commands."
 
 ---
 
-## 11. History drawer (Phase 2)
+## 11. History drawer
 
 - [ ] Type any command and execute it
 - [ ] Click the 🕒 clock button in the expanded console header
@@ -157,7 +152,7 @@ osascript requires Apple Events permission.
 
 ---
 
-## 12. Focus and keyboard flow (Phase 2)
+## 12. Focus and keyboard flow
 
 - [ ] After collapsing the console (Esc or N), the strip input immediately regains focus
 - [ ] Typing a new command works without clicking first
@@ -170,16 +165,13 @@ osascript requires Apple Events permission.
 
 ## 13. Provider key storage
 
-Open System Settings flow is manual for v1. Test via the Rust layer:
+Test via the Rust layer (terminal, not the app UI):
 
 ```bash
-# From a terminal (not the app)
-security find-generic-password -s com.extendead.app -a openai
+security find-generic-password -s com.extendead.app -a perplexity
 # Expect: nothing (key not set)
 ```
 
-Via the app (requires a UI surface for key management — Phase 3):  
-For now, the keychain commands are tested at the command layer only.  
 Verify that no key material appears in any log output, IPC payload, or event message.
 
 ---
@@ -200,9 +192,7 @@ Verify that no key material appears in any log output, IPC payload, or event mes
 
 ---
 
-## Phase 2 expected outcomes summary
-
-After Phase 2, the following must work reliably on a real Mac:
+## Current expected outcomes summary
 
 | Command | Expected |
 |---|---|
@@ -213,34 +203,20 @@ After Phase 2, the following must work reliably on a real Mac:
 | `display settings` | Displays pane opens immediately |
 | `downloads` | ~/Downloads opens in Finder |
 
-### Permission-sensitive behaviors
-
-- Volume / mute commands use `set volume` AppleScript — no Apple Events prompt on first use  
-  (these commands are built-in osascript, not targeting another app)
-- If osascript is blocked at the process level (rare), execution returns `blocked` with a clear next-action message — never silent failure
-- Accessibility is reported as `unknown` (Phase 3 will add AXIsProcessTrusted native binding)
-- Apple Events probe uses a harmless volume-read that does not trigger a permission dialog
-
-### Known Phase 2 limitations
-
-- Accessibility permission state is always `unknown` — native `AXIsProcessTrusted()` binding is Phase 3
-- Remote planner is not available — unrecognised commands show "Command not recognised"
-- No per-entry history undo (only the most recent reversible entry can be undone)
-- History drawer shows last 5 entries; full history is persisted but not paginated in UI
-
 ---
 
 ## Known CI limitations
 
-CI runs on Linux (ubuntu-22.04) and verifies:
+CI verifies:
 - TypeScript build
-- Rust fmt / clippy / unit tests / cargo check
+- Rust fmt / clippy / unit tests / cargo check (Linux)
+- Tauri compile-path via `tauri build --no-bundle` (macOS Intel)
 
 CI does **not** verify:
-- macOS-specific runtime behavior (AppleScript, open URLs, system pref panes)
+- macOS-specific runtime behavior (permissions dialogs, AppleScript behavior on your machine)
 - Global shortcut registration
 - Keychain operations
-- Window transparency / always-on-top / skip-taskbar
-- Full Tauri `.app` / `.dmg` bundle generation
+- Window transparency / always-on-top / skip-taskbar behavior
+- Signed `.app` / `.dmg` bundle generation
 
 All items above require a real macOS machine and are covered by this document.
