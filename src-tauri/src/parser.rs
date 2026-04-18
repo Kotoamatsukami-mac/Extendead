@@ -68,13 +68,19 @@ pub fn parse_intent(raw: &str) -> Intent {
     if matches_any(s, &["open youtube in safari"]) {
         return Intent::OpenYoutubeInSafari;
     }
-    if matches_any(s, &["open youtube in chrome", "open youtube in google chrome"]) {
+    if matches_any(
+        s,
+        &["open youtube in chrome", "open youtube in google chrome"],
+    ) {
         return Intent::OpenYoutubeInChrome;
     }
     if matches_any(s, &["open youtube in firefox"]) {
         return Intent::OpenYoutubeInFirefox;
     }
-    if matches_any(s, &["open youtube in brave", "open youtube in brave browser"]) {
+    if matches_any(
+        s,
+        &["open youtube in brave", "open youtube in brave browser"],
+    ) {
         return Intent::OpenYoutubeInBrave;
     }
     if matches_any(s, &["open youtube in arc"]) {
@@ -88,13 +94,24 @@ pub fn parse_intent(raw: &str) -> Intent {
     if matches_any(s, &["open safari", "safari"]) {
         return Intent::OpenSafari;
     }
-    if matches_any(s, &["open chrome", "open google chrome", "chrome", "google chrome"]) {
+    if matches_any(
+        s,
+        &[
+            "open chrome",
+            "open google chrome",
+            "chrome",
+            "google chrome",
+        ],
+    ) {
         return Intent::OpenChrome;
     }
     if matches_any(s, &["open firefox", "firefox"]) {
         return Intent::OpenFirefox;
     }
-    if matches_any(s, &["open brave", "open brave browser", "brave", "brave browser"]) {
+    if matches_any(
+        s,
+        &["open brave", "open brave browser", "brave", "brave browser"],
+    ) {
         return Intent::OpenBrave;
     }
     if matches_any(s, &["open arc", "arc"]) {
@@ -112,7 +129,9 @@ pub fn normalize(raw: &str) -> String {
 }
 
 fn matches_any(haystack: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|n| haystack == *n || haystack.starts_with(n))
+    needles
+        .iter()
+        .any(|n| haystack == *n || haystack.starts_with(n))
 }
 
 fn extract_volume_level(s: &str) -> Option<u8> {
@@ -148,8 +167,14 @@ mod tests {
 
     #[test]
     fn test_parse_youtube_in_browser() {
-        assert_eq!(parse_intent("open youtube in safari"), Intent::OpenYoutubeInSafari);
-        assert_eq!(parse_intent("open youtube in chrome"), Intent::OpenYoutubeInChrome);
+        assert_eq!(
+            parse_intent("open youtube in safari"),
+            Intent::OpenYoutubeInSafari
+        );
+        assert_eq!(
+            parse_intent("open youtube in chrome"),
+            Intent::OpenYoutubeInChrome
+        );
     }
 
     #[test]
@@ -157,7 +182,10 @@ mod tests {
         assert_eq!(parse_intent("mute"), Intent::MuteVolume);
         assert_eq!(parse_intent("set volume to 30"), Intent::SetVolume(30));
         assert_eq!(parse_intent("downloads"), Intent::RevealDownloads);
-        assert_eq!(parse_intent("display settings"), Intent::OpenDisplaySettings);
+        assert_eq!(
+            parse_intent("display settings"),
+            Intent::OpenDisplaySettings
+        );
         assert_eq!(parse_intent("slack"), Intent::OpenSlack);
     }
 }
