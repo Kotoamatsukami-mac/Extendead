@@ -73,6 +73,37 @@ jobs:
       - name: cargo check
         run: cargo check
 
-# NOTE: Full Tauri packaging (dmg, app bundle) is macOS-only and requires a
-# signed identity. It is intentionally excluded from CI. See
-# docs/macos-verification.md for manual macOS testing instructions.
+  # ── macOS Intel (smoke) ─────────────────────────────────────────────────────
+  macos_intel_smoke:
+    name: macOS Intel Smoke (tauri build --no-bundle)
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Tauri build smoke (no bundle)
+        run: npm run tauri -- build --no-bundle
+
+# NOTE: Full Tauri packaging (signed .app / .dmg) is intentionally excluded from CI.
+# See docs/macos-verification.md for the real-machine runtime checklist.
