@@ -1,26 +1,30 @@
-import { useRef, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import './LoungeStrip.css';
 
 interface LoungeStripProps {
   inputValue: string;
+  prediction: string;
   execState: 'idle' | 'parsing' | 'awaiting_route' | 'awaiting_confirm' | 'executing' | 'done' | 'error';
   alwaysOnTop: boolean;
   /** Increment to trigger a re-focus of the input (e.g. after collapse). */
   focusTrigger: number;
   onInput: (value: string) => void;
   onSubmit: (value: string) => void;
+  onAcceptPrediction: () => void;
   onEscape: () => void;
   onToggleAlwaysOnTop: () => void;
 }
 
 export function LoungeStrip({
   inputValue,
+  prediction,
   execState,
   alwaysOnTop,
   focusTrigger,
   onInput,
   onSubmit,
+  onAcceptPrediction,
   onEscape,
   onToggleAlwaysOnTop,
 }: LoungeStripProps) {
@@ -33,8 +37,18 @@ export function LoungeStrip({
 
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';
+  const showPrediction = Boolean(
+    prediction && inputValue && prediction.toLowerCase().startsWith(inputValue.toLowerCase()) && prediction !== inputValue,
+  );
+  const predictionTail = showPrediction ? prediction.slice(inputValue.length) : '';
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Tab' && showPrediction) {
+      e.preventDefault();
+      onAcceptPrediction();
+      return;
+    }
+
     if (e.key === 'Enter' && inputValue.trim()) {
       e.preventDefault();
       onSubmit(inputValue.trim());
@@ -50,10 +64,10 @@ export function LoungeStrip({
 
   const placeholder =
     execState === 'parsing'
-      ? 'Parsing…'
+      ? 'reading intent…'
       : execState === 'executing'
-        ? 'Executing…'
-        : 'Type a command…';
+        ? 'running sequence…'
+        : 'tell extendead what to do';
 
   return (
     <div
@@ -61,31 +75,41 @@ export function LoungeStrip({
       data-tauri-drag-region
     >
       <div className="lounge-strip__inner">
-        <span className="lounge-strip__icon" aria-hidden="true">
-          {isLoading ? '⟳' : '◈'}
-        </span>
+        <span className="lounge-strip__marker" aria-hidden="true" />
 
-        <input
-          ref={inputRef}
-          className="lounge-strip__input"
-          type="text"
-          value={inputValue}
-          placeholder={placeholder}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          disabled={execState === 'parsing' || execState === 'executing'}
-          autoComplete="off"
-          spellCheck={false}
-        />
+        <div className="lounge-strip__input-shell">
+          {showPrediction && (
+            <div className="lounge-strip__ghost" aria-hidden="true">
+              <span className="lounge-strip__ghost-typed">{inputValue}</span>
+              <span className="lounge-strip__ghost-tail">{predictionTail}</span>
+            </div>
+          )}
 
-        <button
-          className={`lounge-strip__pin ${alwaysOnTop ? 'lounge-strip__pin--active' : ''}`}
-          onClick={onToggleAlwaysOnTop}
-          title={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
-          aria-label={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
-        >
-          ⊛
-        </button>
+          <input
+            ref={inputRef}
+            className="lounge-strip__input"
+            type="text"
+            value={inputValue}
+            placeholder={placeholder}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            disabled={execState === 'parsing' || execState === 'executing'}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+
+        <div className="lounge-strip__meta">
+          {showPrediction && <span className="lounge-strip__hint">tab</span>}
+          <button
+            className={`lounge-strip__pin ${alwaysOnTop ? 'lounge-strip__pin--active' : ''}`}
+            onClick={onToggleAlwaysOnTop}
+            title={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
+            aria-label={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
+          >
+            {alwaysOnTop ? '◉' : '◎'}
+          </button>
+        </div>
       </div>
     </div>
   );
