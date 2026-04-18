@@ -10,12 +10,15 @@ pub fn get_permission_status() -> PermissionStatus {
 }
 
 /// Accessibility check.
-/// AXIsProcessTrusted() is the authoritative API but requires unsafe FFI.
-/// For Phase 2 we report Unknown and surface the banner so the user can grant
-/// access proactively. Phase 3 will add the native binding.
+/// Use the native ApplicationServices AXIsProcessTrusted() API so the shell can
+/// report the real trust state instead of a placeholder `unknown` value.
 #[cfg(target_os = "macos")]
 fn check_accessibility() -> PermState {
-    PermState::Unknown
+    if unsafe { ax_is_process_trusted() } {
+        PermState::Granted
+    } else {
+        PermState::Denied
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -52,4 +55,15 @@ fn check_apple_events() -> PermState {
 #[cfg(not(target_os = "macos"))]
 fn check_apple_events() -> PermState {
     PermState::Unknown
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrusted() -> std::os::raw::c_uchar;
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn ax_is_process_trusted() -> bool {
+    AXIsProcessTrusted() != 0
 }
