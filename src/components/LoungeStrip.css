@@ -27,7 +27,7 @@
     #ff0080
   );
   opacity: 0;
-  z-index: -1;
+  z-index: 0;
   transition: opacity 0.3s ease;
   animation: evil-rainbow-spin 4s linear infinite;
 }
@@ -38,8 +38,12 @@
 }
 
 @keyframes evil-rainbow-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .lounge-strip__inner {
@@ -55,24 +59,52 @@
   z-index: 1;
 }
 
-.lounge-strip__icon {
-  font-size: 14px;
-  color: var(--text-secondary);
+.lounge-strip__marker {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
   flex-shrink: 0;
-  line-height: 1;
-  transition: color 0.2s;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
 }
 
-.lounge-strip--loading .lounge-strip__icon {
-  color: var(--text-primary);
-  animation: spin 1s linear infinite;
+.lounge-strip--active .lounge-strip__marker {
+  background: rgba(255, 255, 255, 0.55);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.lounge-strip__input-shell {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.lounge-strip__ghost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  white-space: pre;
+}
+
+/* Keep ghost aligned without double-rendering the typed part */
+.lounge-strip__ghost-typed {
+  color: transparent;
+}
+
+.lounge-strip__ghost-tail {
+  color: rgba(255, 255, 255, 0.22);
 }
 
 .lounge-strip__input {
+  width: 100%;
   flex: 1;
   background: transparent;
   border: none;
@@ -83,6 +115,7 @@
   color: var(--text-primary);
   caret-color: rgba(255, 255, 255, 0.8);
   letter-spacing: 0.01em;
+  padding: 0;
 }
 
 .lounge-strip__input::placeholder {
@@ -91,6 +124,23 @@
 
 .lounge-strip__input:disabled {
   opacity: 0.6;
+}
+
+.lounge-strip__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.lounge-strip__hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .lounge-strip__pin {
@@ -102,7 +152,7 @@
   padding: 4px;
   flex-shrink: 0;
   line-height: 1;
-  border-radius: 4px;
+  border-radius: 8px;
   transition: color 0.15s, background 0.15s;
 }
 
