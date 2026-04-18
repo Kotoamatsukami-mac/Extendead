@@ -2,8 +2,8 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::models::{
-    ApprovalStatus, ExecutionEvent, ExecutionEventKind, ExecutionResult, HistoryEntry, MachineInfo,
-    ParsedCommand, PermissionStatus,
+    ApprovalStatus, ExecutionEvent, ExecutionEventKind, ExecutionOutcome, ExecutionResult,
+    HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
 };
 use crate::provider_keys::ProviderKeyStatus;
 use crate::{executor, history, machine, parser, permissions, provider_keys, resolver, risk};
@@ -196,6 +196,15 @@ pub async fn undo_last(
     };
 
     let result = executor::execute(&undo_cmd, 0, &app).map_err(|e| e.to_string())?;
+
+    if result.outcome == ExecutionOutcome::Success {
+        let mut inner = state.inner.lock().map_err(|_| "state lock error")?;
+        if let Some(last) = inner.history.last_mut() {
+            last.inverse_action = None;
+        }
+        history::save_history(&inner.history).map_err(|e| e.to_string())?;
+    }
+
     Ok(result)
 }
 
