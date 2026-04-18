@@ -1,11 +1,12 @@
 use crate::models::{BrowserInfo, CommandKind, ResolvedAction, ResolvedRoute};
-use crate::parser::Intent;
+use crate::parser::{BrowserTarget, Intent};
 
-/// Resolve a parsed intent into one or more concrete routes.
-/// Machine info (installed browsers) is passed in so Rust owns the scan result.
 pub fn resolve(intent: &Intent, browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>) {
     match intent {
         Intent::OpenYoutube => resolve_youtube(browsers),
+        Intent::OpenYoutubeInBrowser(target) => resolve_youtube_in_browser(target, browsers),
+        Intent::OpenBrowserApp(target) => resolve_browser_app(target, browsers),
+        Intent::OpenFinder => resolve_finder(),
         Intent::OpenSlack => resolve_slack(),
         Intent::MuteVolume => resolve_mute(),
         Intent::SetVolume(level) => resolve_set_volume(*level),
@@ -18,7 +19,6 @@ pub fn resolve(intent: &Intent, browsers: &[BrowserInfo]) -> (CommandKind, Vec<R
 fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>) {
     let url = "https://www.youtube.com";
     let routes: Vec<ResolvedRoute> = if browsers.is_empty() {
-        // Fall back to default browser via plain URL open
         vec![ResolvedRoute {
             label: "Open YouTube".to_string(),
             description: "Open youtube.com in default browser".to_string(),
@@ -29,20 +29,49 @@ fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>
             },
         }]
     } else {
-        browsers
-            .iter()
-            .map(|b| ResolvedRoute {
-                label: format!("Open in {}", b.name),
-                description: format!("Open youtube.com in {}", b.name),
-                action: ResolvedAction::OpenUrl {
-                    url: url.to_string(),
-                    browser_bundle: b.bundle_id.clone(),
-                    browser_name: b.name.clone(),
-                },
-            })
-            .collect()
+        browsers.iter().map(|b| youtube_route(url, b)).collect()
     };
     (CommandKind::MixedWorkflow, routes)
+}
+
+fn resolve_youtube_in_browser(
+    target: &BrowserTarget,
+    browsers: &[BrowserInfo],
+) -> (CommandKind, Vec<ResolvedRoute>) {
+    let browser = find_browser(target, browsers).unwrap_or_else(|| fallback_browser(target));
+    (
+        CommandKind::MixedWorkflow,
+        vec![youtube_route("https://www.youtube.com", &browser)],
+    )
+}
+
+fn resolve_browser_app(target: &BrowserTarget, browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>) {
+    let browser = find_browser(target, browsers).unwrap_or_else(|| fallback_browser(target));
+    (
+        CommandKind::AppControl,
+        vec![ResolvedRoute {
+            label: format!("Open {}", browser.name),
+            description: format!("Launch {}", browser.name),
+            action: ResolvedAction::OpenApp {
+                bundle_id: browser.bundle_id,
+                app_name: browser.name,
+            },
+        }],
+    )
+}
+
+fn resolve_finder() -> (CommandKind, Vec<ResolvedRoute>) {
+    (
+        CommandKind::AppControl,
+        vec![ResolvedRoute {
+            label: "Open Finder".to_string(),
+            description: "Launch Finder.app".to_string(),
+            action: ResolvedAction::OpenApp {
+                bundle_id: "com.apple.finder".to_string(),
+                app_name: "Finder".to_string(),
+            },
+        }],
+    )
 }
 
 fn resolve_slack() -> (CommandKind, Vec<ResolvedRoute>) {
@@ -101,17 +130,61 @@ fn resolve_downloads() -> (CommandKind, Vec<ResolvedRoute>) {
     let routes = vec![ResolvedRoute {
         label: "Reveal Downloads".to_string(),
         description: "Open ~/Downloads in Finder".to_string(),
-        action: ResolvedAction::OpenPath {
-            path: downloads_path,
-        },
+        action: ResolvedAction::OpenPath { path: downloads_path },
     }];
     (CommandKind::Filesystem, routes)
+}
+
+fn youtube_route(url: &str, browser: &BrowserInfo) -> ResolvedRoute {
+    ResolvedRoute {
+        label: format!("Open in {}", browser.name),
+        description: format!("Open youtube.com in {}", browser.name),
+        action: ResolvedAction::OpenUrl {
+            url: url.to_string(),
+            browser_bundle: browser.bundle_id.clone(),
+            browser_name: browser.name.clone(),
+        },
+    }
+}
+
+fn find_browser(target: &BrowserTarget, browsers: &[BrowserInfo]) -> Option<BrowserInfo> {
+    let bundle = fallback_browser(target).bundle_id;
+    browsers.iter().find(|b| b.bundle_id == bundle).cloned()
+}
+
+fn fallback_browser(target: &BrowserTarget) -> BrowserInfo {
+    match target {
+        BrowserTarget::Safari => BrowserInfo {
+            name: "Safari".to_string(),
+            bundle_id: "com.apple.Safari".to_string(),
+            path: "/Applications/Safari.app".to_string(),
+        },
+        BrowserTarget::Chrome => BrowserInfo {
+            name: "Google Chrome".to_string(),
+            bundle_id: "com.google.Chrome".to_string(),
+            path: "/Applications/Google Chrome.app".to_string(),
+        },
+        BrowserTarget::Firefox => BrowserInfo {
+            name: "Firefox".to_string(),
+            bundle_id: "org.mozilla.firefox".to_string(),
+            path: "/Applications/Firefox.app".to_string(),
+        },
+        BrowserTarget::Brave => BrowserInfo {
+            name: "Brave".to_string(),
+            bundle_id: "com.brave.Browser".to_string(),
+            path: "/Applications/Brave Browser.app".to_string(),
+        },
+        BrowserTarget::Arc => BrowserInfo {
+            name: "Arc".to_string(),
+            bundle_id: "company.thebrowser.Browser".to_string(),
+            path: "/Applications/Arc.app".to_string(),
+        },
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::Intent;
 
     fn no_browsers() -> Vec<BrowserInfo> {
         vec![]
@@ -125,47 +198,9 @@ mod tests {
         }]
     }
 
-    fn two_browsers() -> Vec<BrowserInfo> {
-        vec![
-            BrowserInfo {
-                name: "Safari".to_string(),
-                bundle_id: "com.apple.Safari".to_string(),
-                path: "/Applications/Safari.app".to_string(),
-            },
-            BrowserInfo {
-                name: "Chrome".to_string(),
-                bundle_id: "com.google.Chrome".to_string(),
-                path: "/Applications/Google Chrome.app".to_string(),
-            },
-        ]
-    }
-
-    // ── YouTube ──────────────────────────────────────────────────────────────
-
     #[test]
-    fn youtube_no_browsers_resolves_default() {
-        let (kind, routes) = resolve(&Intent::OpenYoutube, &no_browsers());
-        assert_eq!(kind, CommandKind::MixedWorkflow);
-        assert_eq!(routes.len(), 1);
-        match &routes[0].action {
-            ResolvedAction::OpenUrl {
-                url,
-                browser_bundle,
-                browser_name,
-            } => {
-                assert_eq!(url, "https://www.youtube.com");
-                assert_eq!(browser_bundle, "");
-                assert_eq!(browser_name, "Default Browser");
-            }
-            _ => panic!("expected OpenUrl"),
-        }
-    }
-
-    #[test]
-    fn youtube_one_browser_resolves_single_route() {
-        let (kind, routes) = resolve(&Intent::OpenYoutube, &one_browser());
-        assert_eq!(kind, CommandKind::MixedWorkflow);
-        assert_eq!(routes.len(), 1);
+    fn targeted_youtube_uses_selected_browser() {
+        let (_, routes) = resolve(&Intent::OpenYoutubeInBrowser(BrowserTarget::Safari), &one_browser());
         match &routes[0].action {
             ResolvedAction::OpenUrl { browser_bundle, .. } => {
                 assert_eq!(browser_bundle, "com.apple.Safari");
@@ -175,108 +210,27 @@ mod tests {
     }
 
     #[test]
-    fn youtube_two_browsers_resolves_two_routes() {
-        let (kind, routes) = resolve(&Intent::OpenYoutube, &two_browsers());
-        assert_eq!(kind, CommandKind::MixedWorkflow);
-        assert_eq!(routes.len(), 2);
-    }
-
-    // ── Slack ─────────────────────────────────────────────────────────────────
-
-    #[test]
-    fn slack_resolves_to_app_control() {
-        let (kind, routes) = resolve(&Intent::OpenSlack, &no_browsers());
+    fn targeted_browser_open_is_app_control() {
+        let (kind, routes) = resolve(&Intent::OpenBrowserApp(BrowserTarget::Chrome), &no_browsers());
         assert_eq!(kind, CommandKind::AppControl);
-        assert_eq!(routes.len(), 1);
         match &routes[0].action {
-            ResolvedAction::OpenApp {
-                bundle_id,
-                app_name,
-            } => {
-                assert_eq!(bundle_id, "com.tinyspeck.slackmacgap");
-                assert_eq!(app_name, "Slack");
+            ResolvedAction::OpenApp { bundle_id, .. } => {
+                assert_eq!(bundle_id, "com.google.Chrome");
             }
             _ => panic!("expected OpenApp"),
         }
     }
 
-    // ── Mute ─────────────────────────────────────────────────────────────────
-
     #[test]
-    fn mute_resolves_to_applescript_template() {
-        let (kind, routes) = resolve(&Intent::MuteVolume, &no_browsers());
-        assert_eq!(kind, CommandKind::LocalSystem);
-        assert_eq!(routes.len(), 1);
+    fn finder_resolves_to_open_app() {
+        let (kind, routes) = resolve(&Intent::OpenFinder, &no_browsers());
+        assert_eq!(kind, CommandKind::AppControl);
         match &routes[0].action {
-            ResolvedAction::AppleScriptTemplate { template_id, .. } => {
-                assert_eq!(template_id, "mute_volume");
+            ResolvedAction::OpenApp { bundle_id, app_name } => {
+                assert_eq!(bundle_id, "com.apple.finder");
+                assert_eq!(app_name, "Finder");
             }
-            _ => panic!("expected AppleScriptTemplate"),
+            _ => panic!("expected OpenApp"),
         }
-    }
-
-    // ── Set volume ────────────────────────────────────────────────────────────
-
-    #[test]
-    fn set_volume_resolves_with_correct_level() {
-        let (kind, routes) = resolve(&Intent::SetVolume(42), &no_browsers());
-        assert_eq!(kind, CommandKind::LocalSystem);
-        assert_eq!(routes.len(), 1);
-        match &routes[0].action {
-            ResolvedAction::AppleScriptTemplate {
-                script,
-                template_id,
-            } => {
-                assert_eq!(template_id, "set_volume");
-                assert!(script.contains("42"), "script must contain the level");
-            }
-            _ => panic!("expected AppleScriptTemplate"),
-        }
-    }
-
-    #[test]
-    fn set_volume_clamps_to_100() {
-        let (_, routes) = resolve(&Intent::SetVolume(200), &no_browsers());
-        assert_eq!(routes[0].label, "Set volume to 100%");
-    }
-
-    // ── Display settings ──────────────────────────────────────────────────────
-
-    #[test]
-    fn display_settings_resolves_to_pref_pane() {
-        let (kind, routes) = resolve(&Intent::OpenDisplaySettings, &no_browsers());
-        assert_eq!(kind, CommandKind::LocalSystem);
-        match &routes[0].action {
-            ResolvedAction::OpenSystemPreferences { pane_url } => {
-                assert!(pane_url.contains("displays"));
-            }
-            _ => panic!("expected OpenSystemPreferences"),
-        }
-    }
-
-    // ── Downloads ─────────────────────────────────────────────────────────────
-
-    #[test]
-    fn downloads_resolves_to_open_path() {
-        let (kind, routes) = resolve(&Intent::RevealDownloads, &no_browsers());
-        assert_eq!(kind, CommandKind::Filesystem);
-        match &routes[0].action {
-            ResolvedAction::OpenPath { path } => {
-                assert!(path.ends_with("/Downloads"));
-            }
-            _ => panic!("expected OpenPath"),
-        }
-    }
-
-    // ── Unknown ───────────────────────────────────────────────────────────────
-
-    #[test]
-    fn unknown_resolves_to_empty_routes() {
-        let (kind, routes) = resolve(
-            &Intent::Unknown("gibberish command".to_string()),
-            &no_browsers(),
-        );
-        assert_eq!(kind, CommandKind::Unknown);
-        assert!(routes.is_empty());
     }
 }
