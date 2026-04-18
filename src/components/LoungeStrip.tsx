@@ -37,10 +37,14 @@ export function LoungeStrip({
 
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';
-  const showPrediction = Boolean(
-    prediction && inputValue && prediction.toLowerCase().startsWith(inputValue.toLowerCase()) && prediction !== inputValue,
+
+  const normalizedInputValue = inputValue.toLowerCase();
+  const normalizedPrediction = prediction.toLowerCase();
+  const hasPredictionPrefix = Boolean(
+    prediction && inputValue && normalizedPrediction.startsWith(normalizedInputValue),
   );
-  const predictionTail = showPrediction ? prediction.slice(inputValue.length) : '';
+  const predictionTail = hasPredictionPrefix ? prediction.slice(inputValue.length) : '';
+  const showPrediction = predictionTail.length > 0;
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Tab' && showPrediction) {
