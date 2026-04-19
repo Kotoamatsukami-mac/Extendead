@@ -1,5 +1,5 @@
 use crate::models::{BrowserInfo, CommandKind, ResolvedAction, ResolvedRoute};
-use crate::parser::Intent;
+use crate::parser::{BrowserTarget, Intent};
 
 /// Resolve a parsed intent into one or more concrete routes.
 /// Machine info (installed browsers) is passed in so Rust owns the scan result.
@@ -7,6 +7,7 @@ pub fn resolve(intent: &Intent, browsers: &[BrowserInfo]) -> (CommandKind, Vec<R
     match intent {
         Intent::OpenYoutube => resolve_youtube(browsers),
         Intent::OpenSlack => resolve_slack(),
+        Intent::OpenBrowser(target) => resolve_browser(target, browsers),
         Intent::MuteVolume => resolve_mute(),
         Intent::SetVolume(level) => resolve_set_volume(*level),
         Intent::OpenDisplaySettings => resolve_display_settings(),
@@ -18,7 +19,6 @@ pub fn resolve(intent: &Intent, browsers: &[BrowserInfo]) -> (CommandKind, Vec<R
 fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>) {
     let url = "https://www.youtube.com";
     let routes: Vec<ResolvedRoute> = if browsers.is_empty() {
-        // Fall back to default browser via plain URL open
         vec![ResolvedRoute {
             label: "Open YouTube".to_string(),
             description: "Open youtube.com in default browser".to_string(),
@@ -43,6 +43,31 @@ fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>
             .collect()
     };
     (CommandKind::MixedWorkflow, routes)
+}
+
+fn resolve_browser(target: &BrowserTarget, browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>) {
+    let desired_name = match target {
+        BrowserTarget::Chrome => "Google Chrome",
+        BrowserTarget::Safari => "Safari",
+        BrowserTarget::Firefox => "Firefox",
+        BrowserTarget::Brave => "Brave",
+        BrowserTarget::Arc => "Arc",
+    };
+
+    let routes = browsers
+        .iter()
+        .filter(|b| b.name == desired_name)
+        .map(|b| ResolvedRoute {
+            label: format!("Open {}", b.name),
+            description: format!("Launch {}", b.name),
+            action: ResolvedAction::OpenApp {
+                bundle_id: b.bundle_id.clone(),
+                app_name: b.name.clone(),
+            },
+        })
+        .collect();
+
+    (CommandKind::AppControl, routes)
 }
 
 fn resolve_slack() -> (CommandKind, Vec<ResolvedRoute>) {
@@ -111,7 +136,7 @@ fn resolve_downloads() -> (CommandKind, Vec<ResolvedRoute>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::Intent;
+    use crate::parser::{BrowserTarget, Intent};
 
     fn no_browsers() -> Vec<BrowserInfo> {
         vec![]
@@ -133,14 +158,12 @@ mod tests {
                 path: "/Applications/Safari.app".to_string(),
             },
             BrowserInfo {
-                name: "Chrome".to_string(),
+                name: "Google Chrome".to_string(),
                 bundle_id: "com.google.Chrome".to_string(),
                 path: "/Applications/Google Chrome.app".to_string(),
             },
         ]
     }
-
-    // ── YouTube ──────────────────────────────────────────────────────────────
 
     #[test]
     fn youtube_no_browsers_resolves_default() {
@@ -181,7 +204,26 @@ mod tests {
         assert_eq!(routes.len(), 2);
     }
 
-    // ── Slack ─────────────────────────────────────────────────────────────────
+    #[test]
+    fn browser_target_resolves_matching_installed_browser() {
+        let (kind, routes) = resolve(&Intent::OpenBrowser(BrowserTarget::Safari), &two_browsers());
+        assert_eq!(kind, CommandKind::AppControl);
+        assert_eq!(routes.len(), 1);
+        match &routes[0].action {
+            ResolvedAction::OpenApp { bundle_id, app_name } => {
+                assert_eq!(bundle_id, "com.apple.Safari");
+                assert_eq!(app_name, "Safari");
+            }
+            _ => panic!("expected OpenApp"),
+        }
+    }
+
+    #[test]
+    fn browser_target_returns_no_routes_when_not_installed() {
+        let (kind, routes) = resolve(&Intent::OpenBrowser(BrowserTarget::Arc), &two_browsers());
+        assert_eq!(kind, CommandKind::AppControl);
+        assert!(routes.is_empty());
+    }
 
     #[test]
     fn slack_resolves_to_app_control() {
@@ -200,8 +242,6 @@ mod tests {
         }
     }
 
-    // ── Mute ─────────────────────────────────────────────────────────────────
-
     #[test]
     fn mute_resolves_to_applescript_template() {
         let (kind, routes) = resolve(&Intent::MuteVolume, &no_browsers());
@@ -214,8 +254,6 @@ mod tests {
             _ => panic!("expected AppleScriptTemplate"),
         }
     }
-
-    // ── Set volume ────────────────────────────────────────────────────────────
 
     #[test]
     fn set_volume_resolves_with_correct_level() {
@@ -240,8 +278,6 @@ mod tests {
         assert_eq!(routes[0].label, "Set volume to 100%");
     }
 
-    // ── Display settings ──────────────────────────────────────────────────────
-
     #[test]
     fn display_settings_resolves_to_pref_pane() {
         let (kind, routes) = resolve(&Intent::OpenDisplaySettings, &no_browsers());
@@ -254,8 +290,6 @@ mod tests {
         }
     }
 
-    // ── Downloads ─────────────────────────────────────────────────────────────
-
     #[test]
     fn downloads_resolves_to_open_path() {
         let (kind, routes) = resolve(&Intent::RevealDownloads, &no_browsers());
@@ -267,8 +301,6 @@ mod tests {
             _ => panic!("expected OpenPath"),
         }
     }
-
-    // ── Unknown ───────────────────────────────────────────────────────────────
 
     #[test]
     fn unknown_resolves_to_empty_routes() {
