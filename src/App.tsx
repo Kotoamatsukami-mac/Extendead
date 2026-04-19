@@ -10,6 +10,7 @@ import type {
   HistoryEntry,
   ParsedCommand,
   ProviderKeyStatus,
+  ResultFeedback,
 } from './types/commands';
 import type { ExecutionEvent } from './types/events';
 
@@ -22,11 +23,6 @@ type ExecState =
   | 'executing'
   | 'done'
   | 'error';
-
-interface ResultFeedback {
-  message: string;
-  type: 'success' | 'error';
-}
 
 const DEV_PANEL_UNLOCK = '//engine';
 

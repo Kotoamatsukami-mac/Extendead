@@ -1,11 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
+import type { ResultFeedback } from '../types/commands';
 import './LoungeStrip.css';
-
-interface ResultFeedback {
-  message: string;
-  type: 'success' | 'error';
-}
 
 interface LoungeStripProps {
   inputValue: string;
