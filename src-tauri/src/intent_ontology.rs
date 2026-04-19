@@ -68,3 +68,15 @@ pub static ACTIONS: &[ActionDefinition] = &[
 pub fn all_actions() -> &'static [ActionDefinition] {
     ACTIONS
 }
+
+pub fn actions_for_surface_token(token: &str) -> Vec<&'static ActionDefinition> {
+    let normalized = token.trim().to_lowercase();
+    ACTIONS
+        .iter()
+        .filter(|action| {
+            action.surface_synonyms.iter().any(|surface| {
+                normalized == *surface || normalized.starts_with(surface)
+            })
+        })
+        .collect()
+}
