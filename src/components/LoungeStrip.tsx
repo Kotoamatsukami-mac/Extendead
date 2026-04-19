@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
+import type { ResultFeedback } from '../types/commands';
 import './LoungeStrip.css';
 
 interface LoungeStripProps {
@@ -9,6 +10,10 @@ interface LoungeStripProps {
   alwaysOnTop: boolean;
   /** Increment to trigger a re-focus of the input (e.g. after collapse). */
   focusTrigger: number;
+  /** Inline result feedback for one-shot commands. */
+  resultFeedback?: ResultFeedback | null;
+  /** True when the strip is embedded inside the expanded shell panel. */
+  embedded?: boolean;
   onInput: (value: string) => void;
   onSubmit: (value: string) => void;
   onAcceptPrediction: () => void;
@@ -24,6 +29,8 @@ export function LoungeStrip({
   execState,
   alwaysOnTop,
   focusTrigger,
+  resultFeedback,
+  embedded,
   onInput,
   onSubmit,
   onAcceptPrediction,
@@ -40,7 +47,8 @@ export function LoungeStrip({
 
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';
-  const isFocused = execState === 'idle';
+  const isDone = execState === 'done';
+  const isError = execState === 'error';
 
   const normalizedInputValue = inputValue.toLowerCase();
   const normalizedPrediction = prediction.toLowerCase();
@@ -48,7 +56,7 @@ export function LoungeStrip({
     prediction && inputValue && normalizedPrediction.startsWith(normalizedInputValue),
   );
   const predictionTail = hasPredictionPrefix ? prediction.slice(inputValue.length) : '';
-  const showPrediction = predictionTail.length > 0;
+  const showPrediction = predictionTail.length > 0 && !resultFeedback;
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Tab' && showPrediction) {
@@ -81,7 +89,10 @@ export function LoungeStrip({
     'lounge-strip',
     isActive ? 'lounge-strip--active' : '',
     isLoading ? 'lounge-strip--loading' : '',
-    isFocused ? 'lounge-strip--ready' : '',
+    !isActive ? 'lounge-strip--ready' : '',
+    isDone ? 'lounge-strip--done' : '',
+    isError ? 'lounge-strip--error' : '',
+    embedded ? 'lounge-strip--embedded' : '',
   ].filter(Boolean).join(' ');
 
   return (
@@ -97,25 +108,33 @@ export function LoungeStrip({
 
       <div className="lounge-strip__body">
         <div className="lounge-strip__input-shell">
-          {showPrediction && (
-            <div className="lounge-strip__ghost" aria-hidden="true">
-              <span className="lounge-strip__ghost-typed">{inputValue}</span>
-              <span className="lounge-strip__ghost-tail">{predictionTail}</span>
-            </div>
-          )}
+          {resultFeedback ? (
+            <span className={`lounge-strip__feedback lounge-strip__feedback--${resultFeedback.type}`}>
+              {resultFeedback.message}
+            </span>
+          ) : (
+            <>
+              {showPrediction && (
+                <div className="lounge-strip__ghost" aria-hidden="true">
+                  <span className="lounge-strip__ghost-typed">{inputValue}</span>
+                  <span className="lounge-strip__ghost-tail">{predictionTail}</span>
+                </div>
+              )}
 
-          <input
-            ref={inputRef}
-            className="lounge-strip__input"
-            type="text"
-            value={inputValue}
-            placeholder={placeholder}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            autoComplete="off"
-            spellCheck={false}
-          />
+              <input
+                ref={inputRef}
+                className="lounge-strip__input"
+                type="text"
+                value={inputValue}
+                placeholder={placeholder}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                disabled={isLoading}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </>
+          )}
         </div>
 
         <div className="lounge-strip__meta">

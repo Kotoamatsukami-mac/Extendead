@@ -1,16 +1,17 @@
 /* ── Design tokens ────────────────────────────────────────────────────────── */
 
 :root {
-  --glass-bg: rgba(8, 8, 12, 0.88);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --text-primary: rgba(255, 255, 255, 0.95);
-  --text-secondary: rgba(255, 255, 255, 0.45);
+  --glass-bg: rgba(6, 6, 10, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --text-primary: rgba(255, 255, 255, 0.93);
+  --text-secondary: rgba(255, 255, 255, 0.42);
   --accent-r0: #22c55e;
   --accent-r1: #eab308;
   --accent-r2: #f97316;
   --accent-r3: #ef4444;
-  --strip-height: 56px;
-  --strip-radius: 28px;
+  --strip-height: 60px;
+  --strip-radius: 30px;
+  --expanded-radius: 20px;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Mono', monospace;
 }
@@ -64,7 +65,13 @@ button {
 }
 
 .app--expanded {
-  justify-content: flex-start;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--expanded-radius);
+  box-shadow:
+    0 8px 48px rgba(0, 0, 0, 0.7),
+    0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  overflow: hidden;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */

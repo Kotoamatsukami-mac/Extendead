@@ -222,12 +222,12 @@ pub async fn set_window_mode(mode: String, window: tauri::WebviewWindow) -> Resu
     match mode.as_str() {
         "lounge" => {
             window
-                .set_size(tauri::LogicalSize::new(720.0_f64, 56.0_f64))
+                .set_size(tauri::LogicalSize::new(760.0_f64, 60.0_f64))
                 .map_err(|e| e.to_string())?;
         }
         "expanded" => {
             window
-                .set_size(tauri::LogicalSize::new(680.0_f64, 520.0_f64))
+                .set_size(tauri::LogicalSize::new(760.0_f64, 420.0_f64))
                 .map_err(|e| e.to_string())?;
         }
         _ => return Err(format!("unknown window mode: {mode}")),

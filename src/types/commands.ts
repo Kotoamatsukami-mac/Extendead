@@ -140,3 +140,11 @@ export interface ProviderKeyStatus {
   provider: string;
   status: KeyStatus;
 }
+
+// ── Inline feedback ──────────────────────────────────────────────────────────
+// Shown in the lounge strip for one-shot command results.
+
+export interface ResultFeedback {
+  message: string;
+  type: 'success' | 'error';
+}
