@@ -1,8 +1,19 @@
+/// Parsed browser target extracted from normalized input text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BrowserTarget {
+    Chrome,
+    Safari,
+    Firefox,
+    Brave,
+    Arc,
+}
+
 /// Parsed intent extracted from normalized input text.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Intent {
     OpenYoutube,
     OpenSlack,
+    OpenBrowser(BrowserTarget),
     MuteVolume,
     SetVolume(u8),
     OpenDisplaySettings,
@@ -58,6 +69,10 @@ pub fn parse_intent(raw: &str) -> Intent {
         return Intent::OpenSlack;
     }
 
+    if let Some(target) = parse_browser_target(s) {
+        return Intent::OpenBrowser(target);
+    }
+
     Intent::Unknown(raw.to_string())
 }
 
@@ -73,6 +88,21 @@ fn matches_any(haystack: &str, needles: &[&str]) -> bool {
     needles
         .iter()
         .any(|n| haystack == *n || haystack.starts_with(n))
+}
+
+fn parse_browser_target(s: &str) -> Option<BrowserTarget> {
+    match s {
+        "chrome" | "open chrome" | "google chrome" | "open google chrome" => {
+            Some(BrowserTarget::Chrome)
+        }
+        "safari" | "open safari" => Some(BrowserTarget::Safari),
+        "firefox" | "open firefox" => Some(BrowserTarget::Firefox),
+        "brave" | "open brave" | "brave browser" | "open brave browser" => {
+            Some(BrowserTarget::Brave)
+        }
+        "arc" | "open arc" => Some(BrowserTarget::Arc),
+        _ => None,
+    }
 }
 
 /// Try to extract a volume level (0–100) from strings like:
@@ -110,7 +140,6 @@ mod tests {
         assert_eq!(parse_intent("set volume 75"), Intent::SetVolume(75));
         assert_eq!(parse_intent("set volume to 0"), Intent::SetVolume(0));
         assert_eq!(parse_intent("set volume to 100"), Intent::SetVolume(100));
-        // Clamp > 100 at parse level too
         assert_eq!(parse_intent("set volume to 150"), Intent::SetVolume(100));
     }
 
@@ -127,6 +156,31 @@ mod tests {
         assert_eq!(parse_intent("open slack"), Intent::OpenSlack);
         assert_eq!(parse_intent("slack"), Intent::OpenSlack);
         assert_eq!(parse_intent("SLACK"), Intent::OpenSlack);
+    }
+
+    #[test]
+    fn test_parse_browser_targets() {
+        assert_eq!(
+            parse_intent("open safari"),
+            Intent::OpenBrowser(BrowserTarget::Safari)
+        );
+        assert_eq!(
+            parse_intent("chrome"),
+            Intent::OpenBrowser(BrowserTarget::Chrome)
+        );
+        assert_eq!(
+            parse_intent("open google chrome"),
+            Intent::OpenBrowser(BrowserTarget::Chrome)
+        );
+        assert_eq!(
+            parse_intent("firefox"),
+            Intent::OpenBrowser(BrowserTarget::Firefox)
+        );
+        assert_eq!(
+            parse_intent("open brave browser"),
+            Intent::OpenBrowser(BrowserTarget::Brave)
+        );
+        assert_eq!(parse_intent("arc"), Intent::OpenBrowser(BrowserTarget::Arc));
     }
 
     #[test]
@@ -169,11 +223,8 @@ mod tests {
 
     #[test]
     fn test_volume_priority_over_open() {
-        // "set volume to 30" should be SetVolume, not Unknown
         assert_eq!(parse_intent("set volume to 30"), Intent::SetVolume(30));
-        // Plain "volume" without a level should NOT be SetVolume
         let result = parse_intent("volume");
-        // "volume" alone doesn't match a level trigger, falls through to Unknown
         assert!(matches!(result, Intent::Unknown(_)));
     }
 }
