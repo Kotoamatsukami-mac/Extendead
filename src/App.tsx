@@ -6,6 +6,7 @@ import { useCommandBridge } from './hooks/useCommandBridge';
 import { useMachineState } from './hooks/useMachineState';
 import { usePermissionStatus } from './hooks/usePermissionStatus';
 import type {
+  CommandKind,
   ExecutionResult,
   HistoryEntry,
   ParsedCommand,
@@ -36,6 +37,29 @@ const BUILT_IN_PREDICTIONS = [
   'downloads',
   'set volume to 40',
 ] as const;
+
+function noRouteMessage(cmd: ParsedCommand): string {
+  const input = cmd.normalized.trim().toLowerCase();
+
+  if (input.startsWith('close ') || input.startsWith('quit ')) {
+    return 'Quit commands are not wired yet';
+  }
+
+  if (input.startsWith('mute ') || input.startsWith('unmute ')) {
+    return 'That audio action is not available yet';
+  }
+
+  switch (cmd.kind as CommandKind) {
+    case 'app_control':
+      return 'App not available on this Mac';
+    case 'settings':
+      return 'That settings shortcut is not wired yet';
+    case 'mixed_workflow':
+      return 'No valid local route available';
+    default:
+      return 'Not supported in local mode yet';
+  }
+}
 
 export function App() {
   const [mode, setMode] = useState<AppMode>('lounge');
@@ -99,7 +123,7 @@ export function App() {
 
       if (cmd.routes.length === 0) {
         setExecState('error');
-        showInlineFeedback('Command not recognised', 'error', 3500);
+        showInlineFeedback(noRouteMessage(cmd), 'error', 2200);
         return;
       }
 
@@ -121,7 +145,7 @@ export function App() {
     },
     onParseError: (err) => {
       setExecState('error');
-      showInlineFeedback(err, 'error', 3500);
+      showInlineFeedback(err, 'error', 2200);
     },
     onExecutionEvent: (event) => {
       setEvents((prev) => [...prev, event]);
@@ -134,9 +158,9 @@ export function App() {
       if (oneShotRef.current) {
         oneShotRef.current = false;
         const msg = isSuccess
-          ? (res.human_message || '✓ Done')
-          : (res.human_message || '✗ Failed');
-        showInlineFeedback(msg, isSuccess ? 'success' : 'error', isSuccess ? 2000 : 3500);
+          ? (res.human_message || 'Done')
+          : (res.human_message || 'Action failed');
+        showInlineFeedback(msg, isSuccess ? 'success' : 'error', isSuccess ? 1800 : 2400);
       }
 
       bridge.getHistory().then(setHistory);
@@ -146,7 +170,7 @@ export function App() {
 
       if (oneShotRef.current) {
         oneShotRef.current = false;
-        showInlineFeedback(err, 'error', 3500);
+        showInlineFeedback(err, 'error', 2400);
       } else {
         setResult({
           command_id: parsedCommandRef.current?.id ?? '',
@@ -336,6 +360,7 @@ export function App() {
   }, [mode, execState, handleCollapse, handleConfirm, handleCancel]);
 
   void machineInfo;
+  void permissionStatus;
 
   return (
     <div className={`app app--${mode}`}>
