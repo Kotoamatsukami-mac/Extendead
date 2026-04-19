@@ -12,6 +12,7 @@ pub mod events;
 pub mod executor;
 pub mod history;
 pub mod intent_ontology;
+pub mod interpret_commands;
 pub mod interpret_local;
 pub mod machine;
 pub mod models;
@@ -109,6 +110,7 @@ pub fn run() {
             commands::get_provider_key_status,
             commands::set_provider_key,
             commands::delete_provider_key,
+            interpret_commands::debug_interpret_local,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
