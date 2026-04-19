@@ -4,12 +4,15 @@ use std::sync::Mutex;
 use models::{HistoryEntry, MachineInfo, ParsedCommand};
 
 pub mod applescript;
+pub mod arbiter;
 pub mod commands;
 pub mod config;
 pub mod errors;
 pub mod events;
 pub mod executor;
 pub mod history;
+pub mod intent_ontology;
+pub mod interpret_local;
 pub mod machine;
 pub mod models;
 pub mod parser;
@@ -23,8 +26,6 @@ pub mod validator;
 
 pub const APP_CONFIG_MAX_HISTORY: usize = 500;
 
-// ── App state ─────────────────────────────────────────────────────────────────
-
 pub struct AppState {
     pub inner: Mutex<AppStateInner>,
 }
@@ -34,8 +35,6 @@ pub struct AppStateInner {
     pub pending_commands: HashMap<String, ParsedCommand>,
     pub history: Vec<HistoryEntry>,
 }
-
-// ── Entry point ───────────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -77,7 +76,6 @@ pub fn run() {
             use tauri::Manager;
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-            // Scan machine info so resolver has browser list immediately.
             let state = app.state::<AppState>();
             let info = machine::scan_machine();
             {
@@ -85,13 +83,11 @@ pub fn run() {
                 inner.machine_info = Some(info);
             }
 
-            // Load persisted config and apply always_on_top preference.
             let cfg = config::load_config();
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_always_on_top(cfg.always_on_top);
             }
 
-            // Register the global toggle shortcut.
             app.global_shortcut()
                 .register("CommandOrControl+Shift+Space")
                 .unwrap_or_else(|e| log::warn!("Could not register global shortcut: {e}"));
