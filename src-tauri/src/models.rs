@@ -67,6 +67,10 @@ pub enum ResolvedAction {
         bundle_id: String,
         app_name: String,
     },
+    QuitApp {
+        bundle_id: String,
+        app_name: String,
+    },
     AppleScriptTemplate {
         script: String,
         template_id: String,
@@ -76,6 +80,13 @@ pub enum ResolvedAction {
     },
     OpenPath {
         path: String,
+    },
+    CreateFolder {
+        path: String,
+    },
+    MovePath {
+        source_path: String,
+        destination_path: String,
     },
 }
 
