@@ -72,7 +72,24 @@ Type: `slack` or `open slack`
 
 ---
 
-## 6. Mute system volume
+## 6. Open a browser directly
+
+Type:
+- `open safari`
+- `open chrome`
+- `open firefox`
+- `open brave`
+- `open arc`
+
+- [ ] Matching installed browser resolves as `app_control`
+- [ ] Risk `R0`, no confirmation required — executes immediately
+- [ ] Matching browser launches (or comes to front)
+- [ ] If the requested browser is not installed, no route is produced
+- [ ] Missing browser shows a precise blocked result, not `Command not recognised`
+
+---
+
+## 7. Mute system volume
 
 Type: `mute`
 
@@ -83,7 +100,7 @@ Type: `mute`
 
 ---
 
-## 7. Set volume
+## 8. Set volume
 
 Type: `set volume to 40`
 
@@ -95,7 +112,7 @@ Type: `set volume to 40`
 
 ---
 
-## 8. Display settings
+## 9. Display settings
 
 Type: `display settings`
 
@@ -106,7 +123,7 @@ Type: `display settings`
 
 ---
 
-## 9. Reveal Downloads
+## 10. Reveal Downloads
 
 Type: `downloads`
 
@@ -117,7 +134,7 @@ Type: `downloads`
 
 ---
 
-## 10. Permission prompts
+## 11. Permission prompts
 
 ### Accessibility
 First time an AppleScript command (mute, volume) runs, macOS may prompt for
@@ -144,7 +161,7 @@ osascript requires Apple Events permission.
 
 ---
 
-## 11. History drawer (Phase 2)
+## 12. History drawer (Phase 2)
 
 - [ ] Type any command and execute it
 - [ ] Click the 🕒 clock button in the expanded console header
@@ -157,7 +174,7 @@ osascript requires Apple Events permission.
 
 ---
 
-## 12. Focus and keyboard flow (Phase 2)
+## 13. Focus and keyboard flow (Phase 2)
 
 - [ ] After collapsing the console (Esc or N), the strip input immediately regains focus
 - [ ] Typing a new command works without clicking first
@@ -168,7 +185,7 @@ osascript requires Apple Events permission.
 
 ---
 
-## 13. Provider key storage
+## 14. Provider key storage
 
 Open System Settings flow is manual for v1. Test via the Rust layer:
 
@@ -184,7 +201,7 @@ Verify that no key material appears in any log output, IPC payload, or event mes
 
 ---
 
-## 14. Keyboard shortcuts in expanded console
+## 15. Keyboard shortcuts in expanded console
 
 - [ ] `Y` → confirms pending approval
 - [ ] `N` → denies and collapses
@@ -192,7 +209,7 @@ Verify that no key material appears in any log output, IPC payload, or event mes
 
 ---
 
-## 15. History persistence
+## 16. History persistence
 
 - [ ] Execute several commands
 - [ ] Quit and relaunch the app
@@ -208,6 +225,8 @@ After Phase 2, the following must work reliably on a real Mac:
 |---|---|
 | `open youtube` | Route selector → Y → browser opens youtube.com |
 | `open slack` | Launches Slack immediately (R0, no confirm) |
+| `open safari` | Launches Safari immediately if installed |
+| `open chrome` | Launches Google Chrome immediately if installed |
 | `mute` | Y → audio mutes, ↩ Undo unmutes |
 | `set volume to 30` | Y → volume set to 30, ↩ Undo restores prior level |
 | `display settings` | Displays pane opens immediately |
