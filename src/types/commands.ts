@@ -22,8 +22,6 @@ export type ExecutionOutcome =
   | 'timed_out'
   | 'partial_success';
 
-// ── Resolved actions ─────────────────────────────────────────────────────────
-
 export interface OpenUrlAction {
   type: 'open_url';
   url: string;
@@ -33,6 +31,12 @@ export interface OpenUrlAction {
 
 export interface OpenAppAction {
   type: 'open_app';
+  bundle_id: string;
+  app_name: string;
+}
+
+export interface QuitAppAction {
+  type: 'quit_app';
   bundle_id: string;
   app_name: string;
 }
@@ -53,14 +57,26 @@ export interface OpenPathAction {
   path: string;
 }
 
+export interface CreateFolderAction {
+  type: 'create_folder';
+  path: string;
+}
+
+export interface MovePathAction {
+  type: 'move_path';
+  source_path: string;
+  destination_path: string;
+}
+
 export type ResolvedAction =
   | OpenUrlAction
   | OpenAppAction
+  | QuitAppAction
   | AppleScriptTemplateAction
   | OpenSystemPreferencesAction
-  | OpenPathAction;
-
-// ── Route / command ──────────────────────────────────────────────────────────
+  | OpenPathAction
+  | CreateFolderAction
+  | MovePathAction;
 
 export interface ResolvedRoute {
   label: string;
@@ -89,8 +105,6 @@ export interface ExecutionResult {
   inverse_action?: ResolvedAction;
 }
 
-// ── History ──────────────────────────────────────────────────────────────────
-
 export interface HistoryEntry {
   command: ParsedCommand;
   outcome: ExecutionOutcome;
@@ -98,8 +112,6 @@ export interface HistoryEntry {
   inverse_action?: ResolvedAction;
   timestamp: string;
 }
-
-// ── Machine info ─────────────────────────────────────────────────────────────
 
 export interface BrowserInfo {
   name: string;
@@ -123,8 +135,6 @@ export interface MachineInfo {
   home_dir: string;
 }
 
-// ── Permissions ──────────────────────────────────────────────────────────────
-
 export type PermState = 'granted' | 'denied' | 'unknown';
 
 export interface PermissionStatus {
@@ -132,18 +142,12 @@ export interface PermissionStatus {
   apple_events: PermState;
 }
 
-// ── Provider keys ─────────────────────────────────────────────────────────────
-// Only masked status is ever returned from Rust — never the raw key value.
-
 export type KeyStatus = 'set' | 'not_set' | 'access_denied';
 
 export interface ProviderKeyStatus {
   provider: string;
   status: KeyStatus;
 }
-
-// ── Inline feedback ──────────────────────────────────────────────────────────
-// Shown in the lounge strip for one-shot command results.
 
 export interface ResultFeedback {
   message: string;
