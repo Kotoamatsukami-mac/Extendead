@@ -23,6 +23,11 @@ type ExecState =
   | 'done'
   | 'error';
 
+interface ResultFeedback {
+  message: string;
+  type: 'success' | 'error';
+}
+
 const DEV_PANEL_UNLOCK = '//engine';
 
 const BUILT_IN_PREDICTIONS = [
@@ -50,6 +55,7 @@ export function App() {
   const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
   const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
   const [developerBusy, setDeveloperBusy] = useState(false);
+  const [resultFeedback, setResultFeedback] = useState<ResultFeedback | null>(null);
   // Counter incremented whenever the strip should regain focus.
   const [focusTrigger, setFocusTrigger] = useState(0);
 
@@ -59,12 +65,28 @@ export function App() {
     routeIdx: number;
   } | null>(null);
 
+  // Track whether current execution is inline (one-shot, no expand).
+  const oneShotRef = useRef(false);
+  const feedbackTimerRef = useRef<number>(0);
+
   const { machineInfo } = useMachineState();
   const { permissionStatus } = usePermissionStatus();
 
   // parsedCommandRef allows bridge callbacks to read the latest value.
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
   parsedCommandRef.current = parsedCommand;
+
+  function showInlineFeedback(message: string, type: 'success' | 'error', duration: number) {
+    window.clearTimeout(feedbackTimerRef.current);
+    setResultFeedback({ message, type });
+    feedbackTimerRef.current = window.setTimeout(() => {
+      setResultFeedback(null);
+      setExecState('idle');
+      setParsedCommand(null);
+      setResult(null);
+      setFocusTrigger((n) => n + 1);
+    }, duration);
+  }
 
   const bridge = useCommandBridge({
     onParseStart: () => {
@@ -73,64 +95,77 @@ export function App() {
       setEvents([]);
       setResult(null);
       setAutoExec(null);
+      setResultFeedback(null);
+      window.clearTimeout(feedbackTimerRef.current);
+      oneShotRef.current = false;
     },
     onParsed: (cmd) => {
       setParsedCommand(cmd);
-      setMode('expanded');
 
       if (cmd.routes.length === 0) {
+        // No routes — show inline error, stay compact.
         setExecState('error');
-        setResult({
-          command_id: cmd.id,
-          outcome: 'blocked',
-          message: 'No routes resolved for this command',
-          human_message: '✗ Command not recognised',
-          duration_ms: 0,
-        });
+        showInlineFeedback('Command not recognised', 'error', 3500);
         return;
       }
 
       if (cmd.routes.length === 1) {
         setSelectedRouteIndex(0);
         if (cmd.requires_approval) {
+          // Needs approval — must expand.
+          setMode('expanded');
           setExecState('awaiting_confirm');
         } else {
-          // Signal auto-execution via state so it fires after this render.
+          // One-shot: stay compact, auto-execute.
+          oneShotRef.current = true;
           setAutoExec({ cmd, routeIdx: 0 });
         }
       } else {
+        // Multiple routes — must expand for selection.
+        setMode('expanded');
         setSelectedRouteIndex(null);
         setExecState('awaiting_route');
       }
     },
     onParseError: (err) => {
       setExecState('error');
-      setResult({
-        command_id: '',
-        outcome: 'recoverable_failure',
-        message: err,
-        human_message: `✗ ${err}`,
-        duration_ms: 0,
-      });
+      showInlineFeedback(err, 'error', 3500);
     },
     onExecutionEvent: (event) => {
       setEvents((prev) => [...prev, event]);
     },
     onExecuted: (res) => {
       setResult(res);
-      setExecState(res.outcome === 'success' ? 'done' : 'error');
-      // Refresh history after execution so the drawer shows the latest entry.
+      const isSuccess = res.outcome === 'success';
+      setExecState(isSuccess ? 'done' : 'error');
+
+      if (oneShotRef.current) {
+        // One-shot inline feedback.
+        oneShotRef.current = false;
+        const msg = isSuccess
+          ? (res.human_message || '✓ Done')
+          : (res.human_message || '✗ Failed');
+        showInlineFeedback(msg, isSuccess ? 'success' : 'error', isSuccess ? 2000 : 3500);
+      }
+
+      // Refresh history after execution.
       bridge.getHistory().then(setHistory);
     },
     onExecuteError: (err) => {
       setExecState('error');
-      setResult({
-        command_id: parsedCommandRef.current?.id ?? '',
-        outcome: 'recoverable_failure',
-        message: err,
-        human_message: `✗ ${err}`,
-        duration_ms: 0,
-      });
+
+      if (oneShotRef.current) {
+        oneShotRef.current = false;
+        showInlineFeedback(err, 'error', 3500);
+      } else {
+        setResult({
+          command_id: parsedCommandRef.current?.id ?? '',
+          outcome: 'recoverable_failure',
+          message: err,
+          human_message: `✗ ${err}`,
+          duration_ms: 0,
+        });
+      }
     },
   });
 
@@ -177,6 +212,8 @@ export function App() {
     setEvents([]);
     setResult(null);
     setAutoExec(null);
+    setResultFeedback(null);
+    window.clearTimeout(feedbackTimerRef.current);
     void refreshDeveloperStatus();
   }, [refreshDeveloperStatus]);
 
@@ -275,7 +312,20 @@ export function App() {
     }
   }, [bridge]);
 
+  const handleInputChange = useCallback((value: string) => {
+    setInputValue(value);
+    // Typing dismisses any lingering inline feedback.
+    if (resultFeedback) {
+      window.clearTimeout(feedbackTimerRef.current);
+      setResultFeedback(null);
+      setExecState('idle');
+      setParsedCommand(null);
+      setResult(null);
+    }
+  }, [resultFeedback]);
+
   function reset() {
+    window.clearTimeout(feedbackTimerRef.current);
     setMode('lounge');
     setInputValue('');
     setParsedCommand(null);
@@ -285,6 +335,8 @@ export function App() {
     setResult(null);
     setAutoExec(null);
     setShowDeveloperPanel(false);
+    setResultFeedback(null);
+    oneShotRef.current = false;
     // Trigger strip focus after returning to lounge mode.
     setFocusTrigger((n) => n + 1);
   }
@@ -313,60 +365,47 @@ export function App() {
 
   return (
     <div className={`app app--${mode}`}>
-      {mode === 'lounge' ? (
-        <LoungeStrip
-          inputValue={inputValue}
-          prediction={prediction}
-          execState={execState}
-          alwaysOnTop={alwaysOnTop}
-          focusTrigger={focusTrigger}
-          onInput={setInputValue}
-          onSubmit={handleSubmit}
-          onAcceptPrediction={handleAcceptPrediction}
-          onEscape={handleCollapse}
-          onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-          onOpenEngineLink={handleOpenEngineLink}
-        />
-      ) : (
-        <>
-          <LoungeStrip
-            inputValue={inputValue}
-            prediction={prediction}
-            execState={execState}
-            alwaysOnTop={alwaysOnTop}
-            focusTrigger={focusTrigger}
-            onInput={setInputValue}
-            onSubmit={handleSubmit}
-            onAcceptPrediction={handleAcceptPrediction}
-            onEscape={handleCollapse}
-            onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+      <LoungeStrip
+        inputValue={inputValue}
+        prediction={prediction}
+        execState={execState}
+        alwaysOnTop={alwaysOnTop}
+        focusTrigger={focusTrigger}
+        resultFeedback={resultFeedback}
+        embedded={mode === 'expanded'}
+        onInput={handleInputChange}
+        onSubmit={handleSubmit}
+        onAcceptPrediction={handleAcceptPrediction}
+        onEscape={handleCollapse}
+        onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+        onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}
+      />
+      {mode === 'expanded' && (
+        showDeveloperPanel ? (
+          <DeveloperPanel
+            status={primaryProviderStatus}
+            busy={developerBusy}
+            onRefresh={() => void refreshDeveloperStatus()}
+            onLink={handleLinkPrimaryEngine}
+            onClear={handleClearPrimaryEngine}
+            onClose={handleCollapse}
           />
-          {showDeveloperPanel ? (
-            <DeveloperPanel
-              status={primaryProviderStatus}
-              busy={developerBusy}
-              onRefresh={() => void refreshDeveloperStatus()}
-              onLink={handleLinkPrimaryEngine}
-              onClear={handleClearPrimaryEngine}
-              onClose={handleCollapse}
-            />
-          ) : (
-            <ExpandedConsole
-              parsedCommand={parsedCommand}
-              selectedRouteIndex={selectedRouteIndex}
-              execState={execState}
-              events={events}
-              result={result}
-              permissionStatus={permissionStatus}
-              history={history}
-              onSelectRoute={handleSelectRoute}
-              onConfirm={handleConfirm}
-              onCancel={handleCancel}
-              onUndo={handleUndo}
-              onCollapse={handleCollapse}
-            />
-          )}
-        </>
+        ) : (
+          <ExpandedConsole
+            parsedCommand={parsedCommand}
+            selectedRouteIndex={selectedRouteIndex}
+            execState={execState}
+            events={events}
+            result={result}
+            permissionStatus={permissionStatus}
+            history={history}
+            onSelectRoute={handleSelectRoute}
+            onConfirm={handleConfirm}
+            onCancel={handleCancel}
+            onUndo={handleUndo}
+            onCollapse={handleCollapse}
+          />
+        )
       )}
     </div>
   );

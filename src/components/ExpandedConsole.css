@@ -2,12 +2,9 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  min-height: 520px;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
-  box-shadow: 0 8px 48px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
   gap: 0;
 }
 

@@ -1,0 +1,195 @@
+/* ── Developer / Engine link panel ────────────────────────────────────────── */
+
+.developer-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+}
+
+.developer-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.developer-panel__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.developer-panel__title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 2px 0 0;
+}
+
+.developer-panel__close {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.developer-panel__close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Status row ──────────────────────────────────────────────────────────── */
+
+.developer-panel__status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--glass-border);
+  gap: 12px;
+}
+
+.developer-panel__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  display: block;
+}
+
+.developer-panel__status {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+.developer-panel__status--set {
+  color: var(--accent-r0);
+}
+
+.developer-panel__status--not_set {
+  color: var(--text-secondary);
+}
+
+.developer-panel__status--access_denied {
+  color: var(--accent-r3);
+}
+
+/* ── Form ─────────────────────────────────────────────────────────────────── */
+
+.developer-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.developer-panel__input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.developer-panel__input::placeholder {
+  color: var(--text-secondary);
+}
+
+.developer-panel__input:focus {
+  border-color: rgba(140, 100, 220, 0.3);
+}
+
+.developer-panel__input:disabled {
+  opacity: 0.5;
+}
+
+.developer-panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.developer-panel__primary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(140, 100, 220, 0.3);
+  background: rgba(140, 100, 220, 0.10);
+  color: rgba(180, 150, 255, 0.9);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.developer-panel__primary:hover {
+  background: rgba(140, 100, 220, 0.18);
+  border-color: rgba(140, 100, 220, 0.5);
+}
+
+.developer-panel__primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.developer-panel__ghost {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--glass-border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.developer-panel__ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.developer-panel__ghost:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Hint + message ──────────────────────────────────────────────────────── */
+
+.developer-panel__hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 16px 0;
+  line-height: 1.5;
+}
+
+.developer-panel__message {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  border-top: 1px solid var(--glass-border);
+}

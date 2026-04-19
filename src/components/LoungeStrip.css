@@ -11,15 +11,15 @@
   border-radius: var(--strip-radius);
   overflow: hidden;
   box-shadow:
-    0 6px 40px rgba(0, 0, 0, 0.65),
-    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+    0 4px 32px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.03) inset;
   transition:
     border-color 0.25s ease,
     box-shadow 0.25s ease;
   flex-shrink: 0;
 }
 
-/* ── Evil-rainbow accent border (conic gradient behind the shell) ──────────── */
+/* ── Spectral accent border (conic gradient behind the shell — restrained) ── */
 
 .lounge-strip::before {
   content: '';
@@ -28,42 +28,47 @@
   border-radius: var(--strip-radius);
   background: conic-gradient(
     from 0deg,
-    #ff005a,
-    #7928ca,
-    #005aff,
-    #00c8ff,
-    #7928ca,
-    #ff005a
+    #6d28d9,
+    #4338ca,
+    #1e40af,
+    #0891b2,
+    #4338ca,
+    #6d28d9
   );
   opacity: 0;
   z-index: 0;
   transition: opacity 0.4s ease;
-  animation: evil-rainbow-spin 6s linear infinite;
+  animation: spectral-drift 8s linear infinite;
   pointer-events: none;
 }
 
-/* Subtle accent on hover — dangerous but quiet */
+/* Subtle accent on hover — barely there */
 .lounge-strip:hover::before {
-  opacity: 0.15;
+  opacity: 0.06;
 }
 
-/* Focused / ready state — accent whisper */
+/* Focused / ready state — faint spectral whisper */
 .lounge-strip--ready:focus-within::before {
-  opacity: 0.35;
+  opacity: 0.12;
 }
 
 /* Active state — something is parsed / awaiting */
 .lounge-strip--active::before {
-  opacity: 0.45;
+  opacity: 0.15;
 }
 
-/* Loading state — prominent accent */
+/* Loading state — controlled accent increase */
 .lounge-strip--loading::before {
-  opacity: 0.6;
-  animation: evil-rainbow-spin 3s linear infinite;
+  opacity: 0.22;
+  animation: spectral-drift 4s linear infinite;
 }
 
-@keyframes evil-rainbow-spin {
+/* Done state — brief success accent */
+.lounge-strip--done::before {
+  opacity: 0.10;
+}
+
+@keyframes spectral-drift {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
@@ -71,11 +76,30 @@
 /* ── Focus glow on the strip itself ───────────────────────────────────────── */
 
 .lounge-strip--ready:focus-within {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.10);
   box-shadow:
-    0 6px 40px rgba(0, 0, 0, 0.65),
-    0 1px 0 rgba(255, 255, 255, 0.06) inset,
-    0 0 0 1px rgba(140, 100, 255, 0.12);
+    0 4px 32px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 0 0 1px rgba(120, 80, 220, 0.08);
+}
+
+/* ── Embedded mode — strip inside expanded panel, no own container styling ── */
+
+.lounge-strip--embedded {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--glass-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.lounge-strip--embedded::before {
+  display: none;
+}
+
+.lounge-strip--embedded .lounge-strip__drag,
+.lounge-strip--embedded .lounge-strip__body {
+  background: transparent;
 }
 
 /* ── Drag lane — dedicated left-side grab region ──────────────────────────── */
@@ -105,23 +129,30 @@
   height: 7px;
   border-radius: 999px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.28);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
   transition:
     background 0.25s ease,
     box-shadow 0.25s ease;
 }
 
 .lounge-strip--active .lounge-strip__marker {
-  background: rgba(180, 140, 255, 0.6);
-  box-shadow:
-    0 0 0 1px rgba(180, 140, 255, 0.15) inset,
-    0 0 6px rgba(180, 140, 255, 0.2);
+  background: rgba(140, 100, 220, 0.5);
+  box-shadow: 0 0 0 1px rgba(140, 100, 220, 0.12) inset;
 }
 
 .lounge-strip--loading .lounge-strip__marker {
-  background: rgba(180, 140, 255, 0.7);
+  background: rgba(140, 100, 220, 0.6);
   animation: marker-pulse 1.5s ease-in-out infinite;
+}
+
+.lounge-strip--done .lounge-strip__marker {
+  background: rgba(34, 197, 94, 0.6);
+  box-shadow: 0 0 4px rgba(34, 197, 94, 0.15);
+}
+
+.lounge-strip--error .lounge-strip__marker {
+  background: rgba(239, 68, 68, 0.5);
 }
 
 @keyframes marker-pulse {
@@ -174,12 +205,12 @@
 }
 
 .lounge-strip__ghost-tail {
-  color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.15);
   transition: color 0.2s ease;
 }
 
 .lounge-strip:hover .lounge-strip__ghost-tail {
-  color: rgba(255, 255, 255, 0.24);
+  color: rgba(255, 255, 255, 0.20);
 }
 
 /* ── Input field ──────────────────────────────────────────────────────────── */
@@ -194,26 +225,47 @@
   font-size: 14px;
   font-weight: 400;
   color: var(--text-primary);
-  caret-color: rgba(180, 140, 255, 0.85);
+  caret-color: rgba(140, 100, 220, 0.75);
   letter-spacing: 0.02em;
   padding: 0;
   line-height: var(--strip-height);
 }
 
 .lounge-strip__input::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.25);
   font-weight: 400;
   letter-spacing: 0.03em;
   transition: color 0.2s ease;
 }
 
 .lounge-strip__input:focus::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .lounge-strip__input:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ── Inline feedback — one-shot result display ────────────────────────────── */
+
+.lounge-strip__feedback {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: var(--strip-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lounge-strip__feedback--success {
+  color: var(--accent-r0);
+}
+
+.lounge-strip__feedback--error {
+  color: rgba(255, 255, 255, 0.45);
 }
 
 /* ── Meta area — right side controls ──────────────────────────────────────── */
@@ -231,11 +283,11 @@
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.25);
   padding: 2px 6px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -249,7 +301,7 @@
   background: transparent;
   border: none;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.25);
   padding: 5px;
   flex-shrink: 0;
   line-height: 1;
@@ -260,13 +312,13 @@
 }
 
 .lounge-strip__action-btn:hover {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .lounge-strip__action-btn:active {
-  color: rgba(180, 140, 255, 0.8);
-  background: rgba(180, 140, 255, 0.08);
+  color: rgba(140, 100, 220, 0.7);
+  background: rgba(140, 100, 220, 0.06);
 }
 
 /* ── Pin button ───────────────────────────────────────────────────────────── */
@@ -276,7 +328,7 @@
   border: none;
   cursor: pointer;
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.25);
   padding: 5px;
   flex-shrink: 0;
   line-height: 1;
@@ -287,15 +339,15 @@
 }
 
 .lounge-strip__pin:hover {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .lounge-strip__pin--active {
-  color: rgba(180, 140, 255, 0.7);
+  color: rgba(140, 100, 220, 0.6);
 }
 
 .lounge-strip__pin--active:hover {
-  color: rgba(180, 140, 255, 0.9);
-  background: rgba(180, 140, 255, 0.08);
+  color: rgba(140, 100, 220, 0.8);
+  background: rgba(140, 100, 220, 0.06);
 }
