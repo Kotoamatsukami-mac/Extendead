@@ -6,8 +6,10 @@ import { useCommandBridge } from './hooks/useCommandBridge';
 import { useMachineState } from './hooks/useMachineState';
 import { usePermissionStatus } from './hooks/usePermissionStatus';
 import type {
+  CommandSuggestion,
   ExecutionResult,
   HistoryEntry,
+  MachineInfo,
   ParsedCommand,
   ProviderKeyStatus,
   ResultFeedback,
@@ -176,6 +178,11 @@ export function App() {
     [inputValue, history],
   );
 
+  const suggestions = useMemo(
+    () => getCommandSuggestions(inputValue, machineInfo),
+    [inputValue, machineInfo],
+  );
+
   const refreshDeveloperStatus = useCallback(async () => {
     setDeveloperBusy(true);
     try {
@@ -222,6 +229,10 @@ export function App() {
       setInputValue(prediction);
     }
   }, [prediction]);
+
+  const handleApplySuggestion = useCallback((value: string) => {
+    setInputValue(value);
+  }, []);
 
   const handleSelectRoute = useCallback(
     (index: number) => {
@@ -348,6 +359,7 @@ export function App() {
       <LoungeStrip
         inputValue={inputValue}
         prediction={prediction}
+        suggestions={suggestions}
         execState={execState}
         alwaysOnTop={alwaysOnTop}
         focusTrigger={focusTrigger}
@@ -356,6 +368,7 @@ export function App() {
         onInput={handleInputChange}
         onSubmit={handleSubmit}
         onAcceptPrediction={handleAcceptPrediction}
+        onApplySuggestion={handleApplySuggestion}
         onEscape={handleCollapse}
         onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}
@@ -409,6 +422,206 @@ function getPrediction(inputValue: string, history: HistoryEntry[]): string {
   }
 
   return '';
+}
+
+function getCommandSuggestions(inputValue: string, machineInfo: MachineInfo | null): CommandSuggestion[] {
+  const normalized = normalizePhrase(inputValue);
+  if (normalized.length < 2) return [];
+
+  const commands: CommandSuggestion[] = [];
+  const appNames = getInstalledAppNames(machineInfo);
+  const appQuery = getRemainderAfterPrefix(normalized, ['close ', 'quit ', 'exit ', 'open ', 'launch ', 'start ', 'run ']);
+  const titleCaseQuery = titleCase(appQuery);
+
+  if (startsWithAny(normalized, ['close ', 'quit ', 'exit '])) {
+    const matchingApps = filterAppNames(appNames, appQuery);
+    for (const app of matchingApps) {
+      commands.push({
+        id: `close-${app.toLowerCase()}`,
+        family: 'close app',
+        canonical: `close ${app.toLowerCase()}`,
+        detail: `quit ${app}`,
+      });
+    }
+  }
+
+  if (startsWithAny(normalized, ['open ', 'launch ', 'start ', 'run '])) {
+    if (looksLikePath(appQuery)) {
+      commands.push({
+        id: `path-${appQuery}`,
+        family: 'open path',
+        canonical: `open ${appQuery}`,
+        detail: 'open path in Finder',
+      });
+    } else {
+      const matchingApps = filterAppNames(appNames, appQuery);
+      for (const app of matchingApps) {
+        commands.push({
+          id: `open-${app.toLowerCase()}`,
+          family: 'open app',
+          canonical: `open ${app.toLowerCase()}`,
+          detail: `launch ${app}`,
+        });
+      }
+    }
+  }
+
+  if (startsWithAny(normalized, ['create folder', 'make folder', 'new folder'])) {
+    const folderName = extractFolderName(inputValue);
+    const canonicalName = folderName || (titleCaseQuery || 'New Folder');
+    commands.push({
+      id: `create-folder-${canonicalName.toLowerCase()}`,
+      family: 'create folder',
+      canonical: `create folder called ${canonicalName} in home`,
+      detail: 'create folder in home directory',
+    });
+  }
+
+  if (startsWithAny(normalized, ['move ', 'put '])) {
+    const moveSuggestion = extractMoveSuggestion(inputValue);
+    if (moveSuggestion) {
+      commands.push(moveSuggestion);
+    }
+  }
+
+  if (normalized.includes('download')) {
+    commands.push({
+      id: 'downloads',
+      family: 'open path',
+      canonical: 'downloads',
+      detail: 'open Downloads in Finder',
+    });
+  }
+
+  if (normalized.includes('display') || normalized.includes('screen') || normalized.includes('monitor')) {
+    commands.push({
+      id: 'display-settings',
+      family: 'settings',
+      canonical: 'display settings',
+      detail: 'open System Settings → Displays',
+    });
+  }
+
+  if (normalized.includes('mute')) {
+    commands.push({
+      id: 'mute',
+      family: 'sound',
+      canonical: 'mute',
+      detail: 'mute system audio',
+    });
+  }
+
+  const volumeSuggestion = extractVolumeSuggestion(normalized);
+  if (volumeSuggestion) {
+    commands.push(volumeSuggestion);
+  }
+
+  return dedupeSuggestions(commands).slice(0, 4);
+}
+
+function getInstalledAppNames(machineInfo: MachineInfo | null): string[] {
+  const fromApps = machineInfo?.installed_apps?.map((app) => app.name) ?? [];
+  const fromBrowsers = machineInfo?.installed_browsers?.map((app) => app.name) ?? [];
+  const merged = [...fromApps, ...fromBrowsers, 'Safari', 'Google Chrome', 'Firefox', 'Brave', 'Arc', 'Finder', 'Slack'];
+  return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
+}
+
+function filterAppNames(appNames: string[], query: string): string[] {
+  const normalizedQuery = normalizePhrase(query);
+  if (!normalizedQuery) return appNames.slice(0, 4);
+  return appNames
+    .filter((app) => normalizePhrase(app).includes(normalizedQuery))
+    .slice(0, 4);
+}
+
+function extractFolderName(raw: string): string {
+  const trimmed = raw.trim();
+  const lower = normalizePhrase(trimmed);
+  for (const marker of [' called ', ' named ']) {
+    const index = lower.indexOf(marker);
+    if (index >= 0) {
+      const after = trimmed.slice(index + marker.length).trim();
+      const baseSplit = after.split(/\s+(?:in|inside|under)\s+/i)[0]?.trim();
+      return stripQuotes(baseSplit || '');
+    }
+  }
+  return '';
+}
+
+function extractMoveSuggestion(raw: string): CommandSuggestion | null {
+  const lower = normalizePhrase(raw);
+  const marker = lower.includes(' into ') ? ' into ' : lower.includes(' to ') ? ' to ' : '';
+  if (!marker) return null;
+  const parts = raw.trim().split(new RegExp(marker, 'i'));
+  if (parts.length < 2) return null;
+  const source = stripQuotes(parts[0].replace(/^(move|put)\s+/i, '').trim());
+  const destination = stripQuotes(parts[1].trim());
+  if (!source || !destination) return null;
+  return {
+    id: `move-${source}-${destination}`,
+    family: 'move path',
+    canonical: `move ${source} to ${destination}`,
+    detail: 'move path inside home directory',
+  };
+}
+
+function extractVolumeSuggestion(normalized: string): CommandSuggestion | null {
+  const match = normalized.match(/(?:set\s+volume\s+to|volume\s+to|set\s+volume|volume\s+at)\s+(\d{1,3})/);
+  if (!match) return null;
+  const level = Math.max(0, Math.min(100, Number(match[1])));
+  return {
+    id: `volume-${level}`,
+    family: 'sound',
+    canonical: `set volume to ${level}`,
+    detail: 'set output volume',
+  };
+}
+
+function dedupeSuggestions(items: CommandSuggestion[]): CommandSuggestion[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.family}:${item.canonical.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function startsWithAny(value: string, prefixes: string[]): boolean {
+  return prefixes.some((prefix) => value.startsWith(prefix));
+}
+
+function getRemainderAfterPrefix(value: string, prefixes: string[]): string {
+  for (const prefix of prefixes) {
+    if (value.startsWith(prefix)) {
+      return value.slice(prefix.length).trim();
+    }
+  }
+  return value;
+}
+
+function normalizePhrase(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function stripQuotes(value: string): string {
+  return value.trim().replace(/^['"“”]+|['"“”]+$/g, '');
+}
+
+function looksLikePath(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith('~/')
+    || trimmed.startsWith('/')
+    || trimmed.includes('/')
+    || ['desktop', 'downloads', 'documents', 'home'].includes(trimmed);
 }
 
 function getUnresolvedMessage(cmd: ParsedCommand): string {
