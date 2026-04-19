@@ -25,7 +25,6 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
 
-  // Subscribe to Rust execution-event stream.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -130,10 +129,6 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     [],
   );
 
-  // ── Provider key helpers ──────────────────────────────────────────────────
-  // Raw key values must never be stored in React state; pass through
-  // immediately to Rust and discard.
-
   const getProviderKeyStatus = useCallback(
     async (provider: string): Promise<ProviderKeyStatus | null> => {
       try {
@@ -159,6 +154,10 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     [],
   );
 
+  const debugInterpretLocal = useCallback(async (input: string): Promise<string> => {
+    return invoke<string>('debug_interpret_local', { input });
+  }, []);
+
   return {
     parseCommand,
     approveAndExecute,
@@ -172,5 +171,6 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     getProviderKeyStatus,
     setProviderKey,
     deleteProviderKey,
+    debugInterpretLocal,
   };
 }
