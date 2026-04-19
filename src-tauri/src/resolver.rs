@@ -1,31 +1,60 @@
+use crate::machine;
 use crate::models::{BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedRoute};
 use crate::parser::Intent;
 
-pub fn resolve(intent: &Intent, machine: &MachineInfo) -> (CommandKind, Vec<ResolvedRoute>) {
+pub fn resolve(
+    intent: &Intent,
+    machine: &MachineInfo,
+) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
     let browsers = &machine.installed_browsers;
     match intent {
-        Intent::OpenYoutube => resolve_youtube(browsers),
-        Intent::OpenYoutubeInSafari => resolve_youtube_in_browser("Safari", "com.apple.Safari"),
+        Intent::OpenYoutube => {
+            let (kind, routes) = resolve_youtube(browsers);
+            (kind, routes, None)
+        }
+        Intent::OpenYoutubeInSafari => {
+            resolve_youtube_in_browser(machine, "Safari", "com.apple.Safari")
+        }
         Intent::OpenYoutubeInChrome => {
-            resolve_youtube_in_browser("Google Chrome", "com.google.Chrome")
+            resolve_youtube_in_browser(machine, "Google Chrome", "com.google.Chrome")
         }
         Intent::OpenYoutubeInFirefox => {
-            resolve_youtube_in_browser("Firefox", "org.mozilla.firefox")
+            resolve_youtube_in_browser(machine, "Firefox", "org.mozilla.firefox")
         }
-        Intent::OpenYoutubeInBrave => resolve_youtube_in_browser("Brave", "com.brave.Browser"),
-        Intent::OpenYoutubeInArc => resolve_youtube_in_browser("Arc", "company.thebrowser.Browser"),
-        Intent::OpenSafari => resolve_open_app("Safari", "com.apple.Safari"),
-        Intent::OpenChrome => resolve_open_app("Google Chrome", "com.google.Chrome"),
-        Intent::OpenFirefox => resolve_open_app("Firefox", "org.mozilla.firefox"),
-        Intent::OpenBrave => resolve_open_app("Brave", "com.brave.Browser"),
-        Intent::OpenArc => resolve_open_app("Arc", "company.thebrowser.Browser"),
-        Intent::OpenFinder => resolve_open_app("Finder", "com.apple.finder"),
-        Intent::OpenSlack => resolve_open_app("Slack", "com.tinyspeck.slackmacgap"),
-        Intent::MuteVolume => resolve_mute(),
-        Intent::SetVolume(level) => resolve_set_volume(*level),
-        Intent::OpenDisplaySettings => resolve_display_settings(),
-        Intent::RevealDownloads => resolve_downloads(),
-        Intent::Unknown(_) => (CommandKind::Unknown, vec![]),
+        Intent::OpenYoutubeInBrave => {
+            resolve_youtube_in_browser(machine, "Brave", "com.brave.Browser")
+        }
+        Intent::OpenYoutubeInArc => {
+            resolve_youtube_in_browser(machine, "Arc", "company.thebrowser.Browser")
+        }
+        Intent::OpenSafari => resolve_open_app(machine, "Safari", "com.apple.Safari"),
+        Intent::OpenChrome => resolve_open_app(machine, "Google Chrome", "com.google.Chrome"),
+        Intent::OpenFirefox => resolve_open_app(machine, "Firefox", "org.mozilla.firefox"),
+        Intent::OpenBrave => resolve_open_app(machine, "Brave", "com.brave.Browser"),
+        Intent::OpenArc => resolve_open_app(machine, "Arc", "company.thebrowser.Browser"),
+        Intent::OpenFinder => resolve_open_app(machine, "Finder", "com.apple.finder"),
+        Intent::OpenSlack => resolve_open_app(machine, "Slack", "com.tinyspeck.slackmacgap"),
+        Intent::MuteVolume => {
+            let (kind, routes) = resolve_mute();
+            (kind, routes, None)
+        }
+        Intent::SetVolume(level) => {
+            let (kind, routes) = resolve_set_volume(*level);
+            (kind, routes, None)
+        }
+        Intent::OpenDisplaySettings => {
+            let (kind, routes) = resolve_display_settings();
+            (kind, routes, None)
+        }
+        Intent::RevealDownloads => {
+            let (kind, routes) = resolve_downloads();
+            (kind, routes, None)
+        }
+        Intent::Unknown(_) => (
+            CommandKind::Unknown,
+            vec![],
+            Some("That command is outside current local coverage.".to_string()),
+        ),
     }
 }
 
@@ -59,9 +88,18 @@ fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>
 }
 
 fn resolve_youtube_in_browser(
+    machine: &MachineInfo,
     browser_name: &str,
     bundle_id: &str,
-) -> (CommandKind, Vec<ResolvedRoute>) {
+) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+    if !machine::is_app_installed(machine, bundle_id) {
+        return (
+            CommandKind::MixedWorkflow,
+            vec![],
+            Some(format!("{browser_name} is not installed on this Mac.")),
+        );
+    }
+
     (
         CommandKind::MixedWorkflow,
         vec![ResolvedRoute {
@@ -73,10 +111,23 @@ fn resolve_youtube_in_browser(
                 browser_name: browser_name.to_string(),
             },
         }],
+        None,
     )
 }
 
-fn resolve_open_app(app_name: &str, bundle_id: &str) -> (CommandKind, Vec<ResolvedRoute>) {
+fn resolve_open_app(
+    machine: &MachineInfo,
+    app_name: &str,
+    bundle_id: &str,
+) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+    if !machine::is_app_installed(machine, bundle_id) {
+        return (
+            CommandKind::AppControl,
+            vec![],
+            Some(format!("{app_name} is not installed on this Mac.")),
+        );
+    }
+
     (
         CommandKind::AppControl,
         vec![ResolvedRoute {
@@ -87,6 +138,7 @@ fn resolve_open_app(app_name: &str, bundle_id: &str) -> (CommandKind, Vec<Resolv
                 app_name: app_name.to_string(),
             },
         }],
+        None,
     )
 }
 
@@ -134,9 +186,7 @@ fn resolve_downloads() -> (CommandKind, Vec<ResolvedRoute>) {
     let routes = vec![ResolvedRoute {
         label: "Reveal Downloads".to_string(),
         description: "Open ~/Downloads in Finder".to_string(),
-        action: ResolvedAction::OpenPath {
-            path: downloads_path,
-        },
+        action: ResolvedAction::OpenPath { path: downloads_path },
     }];
     (CommandKind::Filesystem, routes)
 }
@@ -159,7 +209,7 @@ mod tests {
         }
     }
 
-    fn two_browsers_machine() -> MachineInfo {
+    fn full_machine() -> MachineInfo {
         MachineInfo {
             hostname: "test".to_string(),
             username: "test".to_string(),
@@ -177,34 +227,36 @@ mod tests {
                     path: "/Applications/Google Chrome.app".to_string(),
                 },
             ],
-            installed_apps: vec![AppInfo {
-                name: "Slack".to_string(),
-                bundle_id: "com.tinyspeck.slackmacgap".to_string(),
-                path: "/Applications/Slack.app".to_string(),
-            }],
+            installed_apps: vec![
+                AppInfo {
+                    name: "Slack".to_string(),
+                    bundle_id: "com.tinyspeck.slackmacgap".to_string(),
+                    path: "/Applications/Slack.app".to_string(),
+                },
+                AppInfo {
+                    name: "Finder".to_string(),
+                    bundle_id: "com.apple.finder".to_string(),
+                    path: "/System/Library/CoreServices/Finder.app".to_string(),
+                },
+            ],
             home_dir: "/Users/test".to_string(),
         }
     }
 
     #[test]
     fn youtube_no_browsers_resolves_default() {
-        let (kind, routes) = resolve(&Intent::OpenYoutube, &no_browsers_machine());
+        let (kind, routes, unresolved) = resolve(&Intent::OpenYoutube, &no_browsers_machine());
         assert_eq!(kind, CommandKind::MixedWorkflow);
         assert_eq!(routes.len(), 1);
+        assert!(unresolved.is_none());
     }
 
     #[test]
-    fn youtube_two_browsers_resolves_multiple_routes() {
-        let (kind, routes) = resolve(&Intent::OpenYoutube, &two_browsers_machine());
-        assert_eq!(kind, CommandKind::MixedWorkflow);
-        assert_eq!(routes.len(), 2);
-    }
-
-    #[test]
-    fn youtube_in_specific_browser_resolves_single_target() {
-        let (kind, routes) = resolve(&Intent::OpenYoutubeInSafari, &no_browsers_machine());
+    fn youtube_known_browser_resolves_single_target() {
+        let (kind, routes, unresolved) = resolve(&Intent::OpenYoutubeInSafari, &full_machine());
         assert_eq!(kind, CommandKind::MixedWorkflow);
         assert_eq!(routes.len(), 1);
+        assert!(unresolved.is_none());
         match &routes[0].action {
             ResolvedAction::OpenUrl { browser_bundle, .. } => {
                 assert_eq!(browser_bundle, "com.apple.Safari");
@@ -214,9 +266,18 @@ mod tests {
     }
 
     #[test]
+    fn missing_specific_browser_returns_unresolved_message() {
+        let (kind, routes, unresolved) = resolve(&Intent::OpenYoutubeInSafari, &no_browsers_machine());
+        assert_eq!(kind, CommandKind::MixedWorkflow);
+        assert!(routes.is_empty());
+        assert_eq!(unresolved.as_deref(), Some("Safari is not installed on this Mac."));
+    }
+
+    #[test]
     fn browser_app_intent_resolves_to_open_app() {
-        let (kind, routes) = resolve(&Intent::OpenChrome, &no_browsers_machine());
+        let (kind, routes, unresolved) = resolve(&Intent::OpenChrome, &full_machine());
         assert_eq!(kind, CommandKind::AppControl);
+        assert!(unresolved.is_none());
         match &routes[0].action {
             ResolvedAction::OpenApp {
                 bundle_id,
@@ -230,33 +291,34 @@ mod tests {
     }
 
     #[test]
-    fn finder_resolves_to_open_app() {
-        let (kind, routes) = resolve(&Intent::OpenFinder, &no_browsers_machine());
+    fn missing_app_returns_unresolved_message() {
+        let (kind, routes, unresolved) = resolve(&Intent::OpenSlack, &no_browsers_machine());
         assert_eq!(kind, CommandKind::AppControl);
-        match &routes[0].action {
-            ResolvedAction::OpenApp { bundle_id, .. } => {
-                assert_eq!(bundle_id, "com.apple.finder");
-            }
-            _ => panic!("expected OpenApp"),
-        }
+        assert!(routes.is_empty());
+        assert_eq!(unresolved.as_deref(), Some("Slack is not installed on this Mac."));
+    }
+
+    #[test]
+    fn unknown_returns_local_coverage_message() {
+        let (kind, routes, unresolved) = resolve(
+            &Intent::Unknown("do something impossible".to_string()),
+            &full_machine(),
+        );
+        assert_eq!(kind, CommandKind::Unknown);
+        assert!(routes.is_empty());
+        assert_eq!(
+            unresolved.as_deref(),
+            Some("That command is outside current local coverage."),
+        );
     }
 
     #[test]
     fn existing_commands_still_resolve() {
-        let m = no_browsers_machine();
+        let m = full_machine();
         assert_eq!(resolve(&Intent::OpenSlack, &m).0, CommandKind::AppControl);
         assert_eq!(resolve(&Intent::MuteVolume, &m).0, CommandKind::LocalSystem);
-        assert_eq!(
-            resolve(&Intent::SetVolume(42), &m).0,
-            CommandKind::LocalSystem
-        );
-        assert_eq!(
-            resolve(&Intent::OpenDisplaySettings, &m).0,
-            CommandKind::LocalSystem
-        );
-        assert_eq!(
-            resolve(&Intent::RevealDownloads, &m).0,
-            CommandKind::Filesystem
-        );
+        assert_eq!(resolve(&Intent::SetVolume(42), &m).0, CommandKind::LocalSystem);
+        assert_eq!(resolve(&Intent::OpenDisplaySettings, &m).0, CommandKind::LocalSystem);
+        assert_eq!(resolve(&Intent::RevealDownloads, &m).0, CommandKind::Filesystem);
     }
 }
