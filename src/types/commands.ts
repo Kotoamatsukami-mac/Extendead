@@ -153,3 +153,10 @@ export interface ResultFeedback {
   message: string;
   type: 'success' | 'error';
 }
+
+export interface CommandSuggestion {
+  id: string;
+  family: string;
+  canonical: string;
+  detail: string;
+}
