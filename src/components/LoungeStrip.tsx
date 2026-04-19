@@ -14,6 +14,8 @@ interface LoungeStripProps {
   onAcceptPrediction: () => void;
   onEscape: () => void;
   onToggleAlwaysOnTop: () => void;
+  /** Open the engine-link panel from normal UI. */
+  onOpenEngineLink?: () => void;
 }
 
 export function LoungeStrip({
@@ -27,6 +29,7 @@ export function LoungeStrip({
   onAcceptPrediction,
   onEscape,
   onToggleAlwaysOnTop,
+  onOpenEngineLink,
 }: LoungeStripProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -37,6 +40,7 @@ export function LoungeStrip({
 
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';
+  const isFocused = execState === 'idle';
 
   const normalizedInputValue = inputValue.toLowerCase();
   const normalizedPrediction = prediction.toLowerCase();
@@ -73,14 +77,25 @@ export function LoungeStrip({
         ? 'running sequence…'
         : 'tell extendead what to do';
 
-  return (
-    <div
-      className={`lounge-strip ${isActive ? 'lounge-strip--active' : ''} ${isLoading ? 'lounge-strip--loading' : ''}`}
-      data-tauri-drag-region
-    >
-      <div className="lounge-strip__inner">
-        <span className="lounge-strip__marker" aria-hidden="true" />
+  const stateClass = [
+    'lounge-strip',
+    isActive ? 'lounge-strip--active' : '',
+    isLoading ? 'lounge-strip--loading' : '',
+    isFocused ? 'lounge-strip--ready' : '',
+  ].filter(Boolean).join(' ');
 
+  return (
+    <div className={stateClass}>
+      {/* Drag lane — dedicated grab region on the left edge */}
+      <div
+        className="lounge-strip__drag"
+        data-tauri-drag-region
+        aria-hidden="true"
+      >
+        <span className="lounge-strip__marker" data-tauri-drag-region />
+      </div>
+
+      <div className="lounge-strip__body">
         <div className="lounge-strip__input-shell">
           {showPrediction && (
             <div className="lounge-strip__ghost" aria-hidden="true">
@@ -97,7 +112,7 @@ export function LoungeStrip({
             placeholder={placeholder}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            disabled={execState === 'parsing' || execState === 'executing'}
+            disabled={isLoading}
             autoComplete="off"
             spellCheck={false}
           />
@@ -105,6 +120,21 @@ export function LoungeStrip({
 
         <div className="lounge-strip__meta">
           {showPrediction && <span className="lounge-strip__hint">tab</span>}
+
+          {onOpenEngineLink && (
+            <button
+              className="lounge-strip__action-btn"
+              onClick={onOpenEngineLink}
+              title="Engine link"
+              aria-label="Open engine link panel"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M13.5 8a5.5 5.5 0 0 1-.08.87l1.52 1.19a.36.36 0 0 1 .09.46l-1.44 2.49a.36.36 0 0 1-.44.16l-1.79-.72a5.4 5.4 0 0 1-1.51.87l-.27 1.9a.36.36 0 0 1-.36.3H6.38a.36.36 0 0 1-.36-.3l-.27-1.9a5.7 5.7 0 0 1-1.5-.87l-1.8.72a.36.36 0 0 1-.44-.16L.57 10.52a.36.36 0 0 1 .09-.46l1.52-1.19A5.6 5.6 0 0 1 2.1 8c0-.3.03-.59.08-.87L.66 5.94a.36.36 0 0 1-.09-.46l1.44-2.49a.36.36 0 0 1 .44-.16l1.79.72a5.4 5.4 0 0 1 1.51-.87l.27-1.9A.36.36 0 0 1 6.38.48h2.88c.18 0 .33.13.36.3l.27 1.9a5.7 5.7 0 0 1 1.5.87l1.8-.72a.36.36 0 0 1 .44.16l1.44 2.49a.36.36 0 0 1-.09.46l-1.52 1.19c.05.28.08.57.08.87Z" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+            </button>
+          )}
+
           <button
             className={`lounge-strip__pin ${alwaysOnTop ? 'lounge-strip__pin--active' : ''}`}
             onClick={onToggleAlwaysOnTop}
