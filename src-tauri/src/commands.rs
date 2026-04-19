@@ -35,7 +35,7 @@ pub async fn parse_command(
             })
     };
 
-    let (kind, routes) = resolver::resolve(&intent, &machine_info);
+    let (kind, routes, unresolved_message) = resolver::resolve(&intent, &machine_info);
 
     let cmd = ParsedCommand {
         id: uuid::Uuid::new_v4().to_string(),
@@ -46,6 +46,7 @@ pub async fn parse_command(
         risk: crate::models::RiskLevel::R0,
         requires_approval: false,
         approval_status: ApprovalStatus::NotRequired,
+        unresolved_message,
     };
 
     let cmd = risk::annotate(cmd);
@@ -200,6 +201,7 @@ pub async fn undo_last(
         risk: crate::models::RiskLevel::R1,
         requires_approval: false,
         approval_status: ApprovalStatus::NotRequired,
+        unresolved_message: None,
     };
 
     let result = executor::execute(&undo_cmd, 0, &app).map_err(|e| e.to_string())?;
