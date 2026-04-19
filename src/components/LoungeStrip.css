@@ -9,7 +9,7 @@
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--strip-radius);
-  overflow: hidden;
+  overflow: visible;
   box-shadow:
     0 4px 32px rgba(0, 0, 0, 0.55),
     0 1px 0 rgba(255, 255, 255, 0.03) inset;
@@ -18,8 +18,6 @@
     box-shadow 0.25s ease;
   flex-shrink: 0;
 }
-
-/* ── Spectral accent border (conic gradient behind the shell — restrained) ── */
 
 .lounge-strip::before {
   content: '';
@@ -42,28 +40,23 @@
   pointer-events: none;
 }
 
-/* Subtle accent on hover — barely there */
 .lounge-strip:hover::before {
   opacity: 0.06;
 }
 
-/* Focused / ready state — faint spectral whisper */
 .lounge-strip--ready:focus-within::before {
   opacity: 0.12;
 }
 
-/* Active state — something is parsed / awaiting */
 .lounge-strip--active::before {
   opacity: 0.15;
 }
 
-/* Loading state — controlled accent increase */
 .lounge-strip--loading::before {
   opacity: 0.22;
   animation: spectral-drift 4s linear infinite;
 }
 
-/* Done state — brief success accent */
 .lounge-strip--done::before {
   opacity: 0.10;
 }
@@ -73,8 +66,6 @@
   to   { transform: rotate(360deg); }
 }
 
-/* ── Focus glow on the strip itself ───────────────────────────────────────── */
-
 .lounge-strip--ready:focus-within {
   border-color: rgba(255, 255, 255, 0.10);
   box-shadow:
@@ -82,8 +73,6 @@
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 0 0 1px rgba(120, 80, 220, 0.08);
 }
-
-/* ── Embedded mode — strip inside expanded panel, no own container styling ── */
 
 .lounge-strip--embedded {
   background: transparent;
@@ -102,8 +91,6 @@
   background: transparent;
 }
 
-/* ── Drag lane — dedicated left-side grab region ──────────────────────────── */
-
 .lounge-strip__drag {
   display: flex;
   align-items: center;
@@ -121,8 +108,6 @@
 .lounge-strip__drag:active {
   cursor: grabbing;
 }
-
-/* ── Status marker dot — inside drag lane ─────────────────────────────────── */
 
 .lounge-strip__marker {
   width: 7px;
@@ -160,8 +145,6 @@
   50%      { opacity: 1; }
 }
 
-/* ── Body — everything to the right of the drag lane ──────────────────────── */
-
 .lounge-strip__body {
   display: flex;
   align-items: center;
@@ -175,8 +158,6 @@
   z-index: 1;
   min-width: 0;
 }
-
-/* ── Input shell — contains input + ghost prediction ──────────────────────── */
 
 .lounge-strip__input-shell {
   position: relative;
@@ -213,8 +194,6 @@
   color: rgba(255, 255, 255, 0.20);
 }
 
-/* ── Input field ──────────────────────────────────────────────────────────── */
-
 .lounge-strip__input {
   width: 100%;
   flex: 1;
@@ -247,8 +226,6 @@
   cursor: default;
 }
 
-/* ── Inline feedback — one-shot result display ────────────────────────────── */
-
 .lounge-strip__feedback {
   font-family: var(--font-mono);
   font-size: 13px;
@@ -268,7 +245,70 @@
   color: rgba(255, 255, 255, 0.45);
 }
 
-/* ── Meta area — right side controls ──────────────────────────────────────── */
+.lounge-strip__suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(10, 10, 14, 0.92);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+  z-index: 6;
+}
+
+.lounge-strip__suggestion {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  padding: 9px 10px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.lounge-strip__suggestion:hover,
+.lounge-strip__suggestion--active {
+  background: rgba(140, 100, 220, 0.08);
+  border-color: rgba(140, 100, 220, 0.18);
+  transform: translateY(-1px);
+}
+
+.lounge-strip__suggestion-family {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.lounge-strip__suggestion-command {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lounge-strip__suggestion-detail {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.34);
+  white-space: nowrap;
+}
 
 .lounge-strip__meta {
   display: flex;
@@ -276,8 +316,6 @@
   gap: 6px;
   flex-shrink: 0;
 }
-
-/* ── Tab hint badge ───────────────────────────────────────────────────────── */
 
 .lounge-strip__hint {
   font-family: var(--font-mono);
@@ -291,8 +329,6 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-
-/* ── Action button (engine link) ──────────────────────────────────────────── */
 
 .lounge-strip__action-btn {
   display: flex;
@@ -320,8 +356,6 @@
   color: rgba(140, 100, 220, 0.7);
   background: rgba(140, 100, 220, 0.06);
 }
-
-/* ── Pin button ───────────────────────────────────────────────────────────── */
 
 .lounge-strip__pin {
   background: transparent;
