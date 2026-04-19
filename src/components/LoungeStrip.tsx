@@ -1,31 +1,30 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import type { ResultFeedback } from '../types/commands';
+import type { CommandSuggestion, ResultFeedback } from '../types/commands';
 import './LoungeStrip.css';
 
 interface LoungeStripProps {
   inputValue: string;
   prediction: string;
+  suggestions: CommandSuggestion[];
   execState: 'idle' | 'parsing' | 'awaiting_route' | 'awaiting_confirm' | 'executing' | 'done' | 'error';
   alwaysOnTop: boolean;
-  /** Increment to trigger a re-focus of the input (e.g. after collapse). */
   focusTrigger: number;
-  /** Inline result feedback for one-shot commands. */
   resultFeedback?: ResultFeedback | null;
-  /** True when the strip is embedded inside the expanded shell panel. */
   embedded?: boolean;
   onInput: (value: string) => void;
   onSubmit: (value: string) => void;
   onAcceptPrediction: () => void;
+  onApplySuggestion: (value: string) => void;
   onEscape: () => void;
   onToggleAlwaysOnTop: () => void;
-  /** Open the engine-link panel from normal UI. */
   onOpenEngineLink?: () => void;
 }
 
 export function LoungeStrip({
   inputValue,
   prediction,
+  suggestions,
   execState,
   alwaysOnTop,
   focusTrigger,
@@ -34,16 +33,21 @@ export function LoungeStrip({
   onInput,
   onSubmit,
   onAcceptPrediction,
+  onApplySuggestion,
   onEscape,
   onToggleAlwaysOnTop,
   onOpenEngineLink,
 }: LoungeStripProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 
-  // Focus on mount and whenever focusTrigger increments (e.g. after collapse).
   useEffect(() => {
     inputRef.current?.focus();
   }, [focusTrigger]);
+
+  useEffect(() => {
+    setSelectedSuggestionIndex(0);
+  }, [inputValue, suggestions.length]);
 
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';
@@ -57,16 +61,45 @@ export function LoungeStrip({
   );
   const predictionTail = hasPredictionPrefix ? prediction.slice(inputValue.length) : '';
   const showPrediction = predictionTail.length > 0 && !resultFeedback;
+  const showSuggestions = suggestions.length > 0 && !resultFeedback && !isLoading;
+
+  function applySelectedSuggestion() {
+    const suggestion = suggestions[selectedSuggestionIndex];
+    if (suggestion) {
+      onApplySuggestion(suggestion.canonical);
+    }
+  }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Tab' && showPrediction) {
+    if (showSuggestions && e.key === 'ArrowDown') {
       e.preventDefault();
-      onAcceptPrediction();
+      setSelectedSuggestionIndex((current) => (current + 1) % suggestions.length);
+      return;
+    }
+
+    if (showSuggestions && e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedSuggestionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
+      return;
+    }
+
+    if ((e.key === 'Tab' && showSuggestions) || (e.key === 'Tab' && showPrediction)) {
+      e.preventDefault();
+      if (showSuggestions) {
+        applySelectedSuggestion();
+      } else {
+        onAcceptPrediction();
+      }
       return;
     }
 
     if (e.key === 'Enter' && inputValue.trim()) {
       e.preventDefault();
+      const selectedSuggestion = suggestions[selectedSuggestionIndex];
+      if (showSuggestions && selectedSuggestion && selectedSuggestion.canonical !== inputValue.trim()) {
+        onApplySuggestion(selectedSuggestion.canonical);
+        return;
+      }
       onSubmit(inputValue.trim());
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -97,7 +130,6 @@ export function LoungeStrip({
 
   return (
     <div className={stateClass}>
-      {/* Drag lane — dedicated grab region on the left edge */}
       <div
         className="lounge-strip__drag"
         data-tauri-drag-region
@@ -133,12 +165,35 @@ export function LoungeStrip({
                 autoComplete="off"
                 spellCheck={false}
               />
+
+              {showSuggestions && (
+                <div className="lounge-strip__suggestions" role="listbox" aria-label="Command suggestions">
+                  {suggestions.map((suggestion, index) => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      className={[
+                        'lounge-strip__suggestion',
+                        index === selectedSuggestionIndex ? 'lounge-strip__suggestion--active' : '',
+                      ].filter(Boolean).join(' ')}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onApplySuggestion(suggestion.canonical);
+                      }}
+                    >
+                      <span className="lounge-strip__suggestion-family">{suggestion.family}</span>
+                      <span className="lounge-strip__suggestion-command">{suggestion.canonical}</span>
+                      <span className="lounge-strip__suggestion-detail">{suggestion.detail}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
 
         <div className="lounge-strip__meta">
-          {showPrediction && <span className="lounge-strip__hint">tab</span>}
+          {(showPrediction || showSuggestions) && <span className="lounge-strip__hint">tab</span>}
 
           {onOpenEngineLink && (
             <button
