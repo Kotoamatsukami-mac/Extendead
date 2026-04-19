@@ -24,18 +24,17 @@ type ExecState =
   | 'done'
   | 'error';
 
-const DEV_PANEL_UNLOCK = '//engine';
-
 const BUILT_IN_PREDICTIONS = [
   'open youtube',
   'open safari',
   'open chrome',
-  'open finder',
-  'open slack',
+  'open firefox',
+  'open brave',
+  'open arc',
+  'slack',
   'display settings',
   'downloads',
   'set volume to 40',
-  DEV_PANEL_UNLOCK,
 ] as const;
 
 export function App() {
@@ -52,28 +51,29 @@ export function App() {
   const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
   const [developerBusy, setDeveloperBusy] = useState(false);
   const [resultFeedback, setResultFeedback] = useState<ResultFeedback | null>(null);
-  // Counter incremented whenever the strip should regain focus.
   const [focusTrigger, setFocusTrigger] = useState(0);
 
-  // Used to trigger no-approval auto-execution after parse settles.
   const [autoExec, setAutoExec] = useState<{
     cmd: ParsedCommand;
     routeIdx: number;
   } | null>(null);
 
-  // Track whether current execution is inline (one-shot, no expand).
   const oneShotRef = useRef(false);
   const feedbackTimerRef = useRef<number>(0);
 
   const { machineInfo } = useMachineState();
   const { permissionStatus } = usePermissionStatus();
 
-  // parsedCommandRef allows bridge callbacks to read the latest value.
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
   parsedCommandRef.current = parsedCommand;
 
-  function showInlineFeedback(message: string, type: 'success' | 'error', duration: number) {
+  function clearInlineFeedback() {
     window.clearTimeout(feedbackTimerRef.current);
+    setResultFeedback(null);
+  }
+
+  function showInlineFeedback(message: string, type: 'success' | 'error', duration: number) {
+    clearInlineFeedback();
     setResultFeedback({ message, type });
     feedbackTimerRef.current = window.setTimeout(() => {
       setResultFeedback(null);
@@ -91,15 +91,13 @@ export function App() {
       setEvents([]);
       setResult(null);
       setAutoExec(null);
-      setResultFeedback(null);
-      window.clearTimeout(feedbackTimerRef.current);
+      clearInlineFeedback();
       oneShotRef.current = false;
     },
     onParsed: (cmd) => {
       setParsedCommand(cmd);
 
       if (cmd.routes.length === 0) {
-        // No routes — show inline error, stay compact.
         setExecState('error');
         showInlineFeedback('Command not recognised', 'error', 3500);
         return;
@@ -108,20 +106,18 @@ export function App() {
       if (cmd.routes.length === 1) {
         setSelectedRouteIndex(0);
         if (cmd.requires_approval) {
-          // Needs approval — must expand.
           setMode('expanded');
           setExecState('awaiting_confirm');
         } else {
-          // One-shot: stay compact, auto-execute.
           oneShotRef.current = true;
           setAutoExec({ cmd, routeIdx: 0 });
         }
-      } else {
-        // Multiple routes — must expand for selection.
-        setMode('expanded');
-        setSelectedRouteIndex(null);
-        setExecState('awaiting_route');
+        return;
       }
+
+      setMode('expanded');
+      setSelectedRouteIndex(null);
+      setExecState('awaiting_route');
     },
     onParseError: (err) => {
       setExecState('error');
@@ -136,7 +132,6 @@ export function App() {
       setExecState(isSuccess ? 'done' : 'error');
 
       if (oneShotRef.current) {
-        // One-shot inline feedback.
         oneShotRef.current = false;
         const msg = isSuccess
           ? (res.human_message || '✓ Done')
@@ -144,7 +139,6 @@ export function App() {
         showInlineFeedback(msg, isSuccess ? 'success' : 'error', isSuccess ? 2000 : 3500);
       }
 
-      // Refresh history after execution.
       bridge.getHistory().then(setHistory);
     },
     onExecuteError: (err) => {
@@ -165,18 +159,15 @@ export function App() {
     },
   });
 
-  // Load history on mount.
   useEffect(() => {
     bridge.getHistory().then(setHistory);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Expand/collapse window with Rust when mode changes.
   useEffect(() => {
     bridge.setWindowMode(mode);
   }, [mode, bridge]);
 
-  // Fire auto-execution for no-approval routes after state settles.
   useEffect(() => {
     if (!autoExec) return;
     setAutoExec(null);
@@ -208,8 +199,7 @@ export function App() {
     setEvents([]);
     setResult(null);
     setAutoExec(null);
-    setResultFeedback(null);
-    window.clearTimeout(feedbackTimerRef.current);
+    clearInlineFeedback();
     void refreshDeveloperStatus();
   }, [refreshDeveloperStatus]);
 
@@ -218,16 +208,10 @@ export function App() {
       const trimmed = value.trim();
       if (!trimmed) return;
 
-      if (trimmed.toLowerCase() === DEV_PANEL_UNLOCK) {
-        handleOpenEngineLink();
-        setInputValue('');
-        return;
-      }
-
       setInputValue('');
       bridge.parseCommand(trimmed);
     },
-    [bridge, handleOpenEngineLink],
+    [bridge],
   );
 
   const handleAcceptPrediction = useCallback(() => {
@@ -310,10 +294,8 @@ export function App() {
 
   const handleInputChange = useCallback((value: string) => {
     setInputValue(value);
-    // Typing dismisses any lingering inline feedback.
     if (resultFeedback) {
-      window.clearTimeout(feedbackTimerRef.current);
-      setResultFeedback(null);
+      clearInlineFeedback();
       setExecState('idle');
       setParsedCommand(null);
       setResult(null);
@@ -321,7 +303,7 @@ export function App() {
   }, [resultFeedback]);
 
   function reset() {
-    window.clearTimeout(feedbackTimerRef.current);
+    clearInlineFeedback();
     setMode('lounge');
     setInputValue('');
     setParsedCommand(null);
@@ -331,13 +313,10 @@ export function App() {
     setResult(null);
     setAutoExec(null);
     setShowDeveloperPanel(false);
-    setResultFeedback(null);
     oneShotRef.current = false;
-    // Trigger strip focus after returning to lounge mode.
     setFocusTrigger((n) => n + 1);
   }
 
-  // Global keyboard: Escape collapses; Y/N confirm or cancel when awaiting approval.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' && mode === 'expanded') {
@@ -356,52 +335,67 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [mode, execState, handleCollapse, handleConfirm, handleCancel]);
 
-  // machineInfo available for future phases that need it.
   void machineInfo;
 
   return (
     <div className={`app app--${mode}`}>
-      <LoungeStrip
-        inputValue={inputValue}
-        prediction={prediction}
-        execState={execState}
-        alwaysOnTop={alwaysOnTop}
-        focusTrigger={focusTrigger}
-        resultFeedback={resultFeedback}
-        embedded={mode === 'expanded'}
-        onInput={handleInputChange}
-        onSubmit={handleSubmit}
-        onAcceptPrediction={handleAcceptPrediction}
-        onEscape={handleCollapse}
-        onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-        onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}
-      />
-      {mode === 'expanded' && (
-        showDeveloperPanel ? (
-          <DeveloperPanel
-            status={primaryProviderStatus}
-            busy={developerBusy}
-            onRefresh={() => void refreshDeveloperStatus()}
-            onLink={handleLinkPrimaryEngine}
-            onClear={handleClearPrimaryEngine}
-            onClose={handleCollapse}
-          />
-        ) : (
-          <ExpandedConsole
-            parsedCommand={parsedCommand}
-            selectedRouteIndex={selectedRouteIndex}
+      {mode === 'lounge' ? (
+        <LoungeStrip
+          inputValue={inputValue}
+          prediction={prediction}
+          execState={execState}
+          alwaysOnTop={alwaysOnTop}
+          focusTrigger={focusTrigger}
+          resultFeedback={resultFeedback}
+          onInput={handleInputChange}
+          onSubmit={handleSubmit}
+          onAcceptPrediction={handleAcceptPrediction}
+          onEscape={handleCollapse}
+          onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+          onOpenEngineLink={handleOpenEngineLink}
+        />
+      ) : (
+        <div className="app__panel">
+          <LoungeStrip
+            inputValue={inputValue}
+            prediction={prediction}
             execState={execState}
-            events={events}
-            result={result}
-            permissionStatus={permissionStatus}
-            history={history}
-            onSelectRoute={handleSelectRoute}
-            onConfirm={handleConfirm}
-            onCancel={handleCancel}
-            onUndo={handleUndo}
-            onCollapse={handleCollapse}
+            alwaysOnTop={alwaysOnTop}
+            focusTrigger={focusTrigger}
+            resultFeedback={resultFeedback}
+            embedded
+            onInput={handleInputChange}
+            onSubmit={handleSubmit}
+            onAcceptPrediction={handleAcceptPrediction}
+            onEscape={handleCollapse}
+            onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
           />
-        )
+          {showDeveloperPanel ? (
+            <DeveloperPanel
+              status={primaryProviderStatus}
+              busy={developerBusy}
+              onRefresh={() => void refreshDeveloperStatus()}
+              onLink={handleLinkPrimaryEngine}
+              onClear={handleClearPrimaryEngine}
+              onClose={handleCollapse}
+            />
+          ) : (
+            <ExpandedConsole
+              parsedCommand={parsedCommand}
+              selectedRouteIndex={selectedRouteIndex}
+              execState={execState}
+              events={events}
+              result={result}
+              permissionStatus={permissionStatus}
+              history={history}
+              onSelectRoute={handleSelectRoute}
+              onConfirm={handleConfirm}
+              onCancel={handleCancel}
+              onUndo={handleUndo}
+              onCollapse={handleCollapse}
+            />
+          )}
+        </div>
       )}
     </div>
   );
