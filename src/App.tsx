@@ -158,28 +158,43 @@ export function App() {
     [inputValue, history],
   );
 
+  const refreshDeveloperStatus = useCallback(async () => {
+    setDeveloperBusy(true);
+    try {
+      const status = await bridge.getProviderKeyStatus('perplexity');
+      setPrimaryProviderStatus(status);
+    } finally {
+      setDeveloperBusy(false);
+    }
+  }, [bridge]);
+
+  const handleOpenEngineLink = useCallback(() => {
+    setShowDeveloperPanel(true);
+    setMode('expanded');
+    setParsedCommand(null);
+    setSelectedRouteIndex(null);
+    setExecState('idle');
+    setEvents([]);
+    setResult(null);
+    setAutoExec(null);
+    void refreshDeveloperStatus();
+  }, [refreshDeveloperStatus]);
+
   const handleSubmit = useCallback(
     (value: string) => {
       const trimmed = value.trim();
       if (!trimmed) return;
 
       if (trimmed.toLowerCase() === DEV_PANEL_UNLOCK) {
-        setShowDeveloperPanel(true);
-        setMode('expanded');
+        handleOpenEngineLink();
         setInputValue('');
-        setParsedCommand(null);
-        setSelectedRouteIndex(null);
-        setExecState('idle');
-        setEvents([]);
-        setResult(null);
-        setAutoExec(null);
-        void refreshDeveloperStatus();
         return;
       }
 
+      setInputValue('');
       bridge.parseCommand(trimmed);
     },
-    [bridge],
+    [bridge, handleOpenEngineLink],
   );
 
   const handleAcceptPrediction = useCallback(() => {
@@ -234,16 +249,6 @@ export function App() {
     setAlwaysOnTop(next);
     bridge.toggleAlwaysOnTop(next);
   }, [alwaysOnTop, bridge]);
-
-  const refreshDeveloperStatus = useCallback(async () => {
-    setDeveloperBusy(true);
-    try {
-      const status = await bridge.getProviderKeyStatus('perplexity');
-      setPrimaryProviderStatus(status);
-    } finally {
-      setDeveloperBusy(false);
-    }
-  }, [bridge]);
 
   const handleLinkPrimaryEngine = useCallback(
     async (value: string) => {
@@ -320,6 +325,7 @@ export function App() {
           onAcceptPrediction={handleAcceptPrediction}
           onEscape={handleCollapse}
           onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+          onOpenEngineLink={handleOpenEngineLink}
         />
       ) : (
         <>
