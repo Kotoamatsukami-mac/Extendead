@@ -4,7 +4,7 @@ import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
 import { useMachineState } from './hooks/useMachineState';
 import { usePermissionStatus } from './hooks/usePermissionStatus';
-import type { ExecutionResult, HistoryEntry, ParsedCommand } from './types/commands';
+import type { CommandKind, ExecutionResult, HistoryEntry, ParsedCommand } from './types/commands';
 import type { ExecutionEvent } from './types/events';
 
 type AppMode = 'lounge' | 'expanded';
@@ -17,6 +17,17 @@ type ExecState =
   | 'done'
   | 'error';
 
+function zeroRouteMessage(kind: CommandKind): string {
+  switch (kind) {
+    case 'app_control':
+      return '✗ App not available on this Mac';
+    case 'mixed_workflow':
+      return '✗ No valid route available on this Mac';
+    default:
+      return '✗ Command not recognised';
+  }
+}
+
 export function App() {
   const [mode, setMode] = useState<AppMode>('lounge');
   const [inputValue, setInputValue] = useState('');
@@ -27,10 +38,8 @@ export function App() {
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  // Counter incremented whenever the strip should regain focus.
   const [focusTrigger, setFocusTrigger] = useState(0);
 
-  // Used to trigger no-approval auto-execution after parse settles.
   const [autoExec, setAutoExec] = useState<{
     cmd: ParsedCommand;
     routeIdx: number;
@@ -39,7 +48,6 @@ export function App() {
   const { machineInfo } = useMachineState();
   const { permissionStatus } = usePermissionStatus();
 
-  // parsedCommandRef allows bridge callbacks to read the latest value.
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
   parsedCommandRef.current = parsedCommand;
 
@@ -60,7 +68,7 @@ export function App() {
           command_id: cmd.id,
           outcome: 'blocked',
           message: 'No routes resolved for this command',
-          human_message: '✗ Command not recognised',
+          human_message: zeroRouteMessage(cmd.kind),
           duration_ms: 0,
         });
         return;
@@ -71,7 +79,6 @@ export function App() {
         if (cmd.requires_approval) {
           setExecState('awaiting_confirm');
         } else {
-          // Signal auto-execution via state so it fires after this render.
           setAutoExec({ cmd, routeIdx: 0 });
         }
       } else {
@@ -95,7 +102,6 @@ export function App() {
     onExecuted: (res) => {
       setResult(res);
       setExecState(res.outcome === 'success' ? 'done' : 'error');
-      // Refresh history after execution so the drawer shows the latest entry.
       bridge.getHistory().then(setHistory);
     },
     onExecuteError: (err) => {
@@ -110,18 +116,15 @@ export function App() {
     },
   });
 
-  // Load history on mount.
   useEffect(() => {
     bridge.getHistory().then(setHistory);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Expand/collapse window with Rust when mode changes.
   useEffect(() => {
     bridge.setWindowMode(mode);
   }, [mode, bridge]);
 
-  // Fire auto-execution for no-approval routes after state settles.
   useEffect(() => {
     if (!autoExec) return;
     setAutoExec(null);
@@ -193,11 +196,9 @@ export function App() {
     setEvents([]);
     setResult(null);
     setAutoExec(null);
-    // Trigger strip focus after returning to lounge mode.
     setFocusTrigger((n) => n + 1);
   }
 
-  // Global keyboard: Escape collapses; Y/N confirm or cancel when awaiting approval.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' && mode === 'expanded') {
@@ -216,7 +217,6 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [mode, execState, handleCollapse, handleConfirm, handleCancel]);
 
-  // machineInfo available for future phases that need it.
   void machineInfo;
 
   return (
@@ -263,4 +263,3 @@ export function App() {
     </div>
   );
 }
-
