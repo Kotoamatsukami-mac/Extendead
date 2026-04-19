@@ -77,6 +77,7 @@ export interface ParsedCommand {
   risk: RiskLevel;
   requires_approval: boolean;
   approval_status: ApprovalStatus;
+  unresolved_message?: string | null;
 }
 
 export interface ExecutionResult {
