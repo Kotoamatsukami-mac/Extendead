@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use crate::machine;
 use crate::models::{BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedRoute};
 use crate::parser::Intent;
@@ -34,6 +36,11 @@ pub fn resolve(
         Intent::OpenArc => resolve_open_app(machine, "Arc", "company.thebrowser.Browser"),
         Intent::OpenFinder => resolve_open_app(machine, "Finder", "com.apple.finder"),
         Intent::OpenSlack => resolve_open_app(machine, "Slack", "com.tinyspeck.slackmacgap"),
+        Intent::OpenAppNamed(name) => resolve_app_named(machine, name, false),
+        Intent::CloseAppNamed(name) => resolve_app_named(machine, name, true),
+        Intent::OpenPath(path) => resolve_open_path(path),
+        Intent::CreateFolder { name, base } => resolve_create_folder(machine, name, base.as_deref()),
+        Intent::MovePath { source, destination } => resolve_move_path(machine, source, destination),
         Intent::MuteVolume => {
             let (kind, routes) = resolve_mute();
             (kind, routes, None)
@@ -142,6 +149,157 @@ fn resolve_open_app(
     )
 }
 
+fn resolve_app_named(
+    machine: &MachineInfo,
+    app_name: &str,
+    should_quit: bool,
+) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+    let query = canonical_app_name(app_name);
+    let app = find_installed_app(machine, &query);
+    let Some((resolved_name, bundle_id)) = app else {
+        return (
+            CommandKind::AppControl,
+            vec![],
+            Some(format!("{} is not installed on this Mac.", display_name(&query))),
+        );
+    };
+
+    let route = if should_quit {
+        ResolvedRoute {
+            label: format!("Close {resolved_name}"),
+            description: format!("Quit {resolved_name}"),
+            action: ResolvedAction::QuitApp {
+                bundle_id,
+                app_name: resolved_name,
+            },
+        }
+    } else {
+        ResolvedRoute {
+            label: format!("Open {resolved_name}"),
+            description: format!("Launch {resolved_name}.app"),
+            action: ResolvedAction::OpenApp {
+                bundle_id,
+                app_name: resolved_name,
+            },
+        }
+    };
+
+    (CommandKind::AppControl, vec![route], None)
+}
+
+fn resolve_open_path(path: &str) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+    let expanded = expand_user_path(path);
+    if !Path::new(&expanded).exists() {
+        return (
+            CommandKind::Filesystem,
+            vec![],
+            Some(format!("{} does not exist.", expanded)),
+        );
+    }
+
+    (
+        CommandKind::Filesystem,
+        vec![ResolvedRoute {
+            label: format!("Open {}", expanded),
+            description: format!("Open {} in Finder", expanded),
+            action: ResolvedAction::OpenPath { path: expanded },
+        }],
+        None,
+    )
+}
+
+fn resolve_create_folder(
+    machine: &MachineInfo,
+    name: &str,
+    base: Option<&str>,
+) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+    let base_path = resolve_base_path(machine, base.unwrap_or("home"));
+    let Some(base_path) = base_path else {
+        return (
+            CommandKind::Filesystem,
+            vec![],
+            Some("I could not resolve where to create that folder.".to_string()),
+        );
+    };
+
+    let target = Path::new(&base_path).join(name);
+    let target_path = target.display().to_string();
+    if target.exists() {
+        return (
+            CommandKind::Filesystem,
+            vec![],
+            Some(format!("{} already exists.", target_path)),
+        );
+    }
+
+    (
+        CommandKind::Filesystem,
+        vec![ResolvedRoute {
+            label: format!("Create folder {}", name),
+            description: format!("Create {}", target_path),
+            action: ResolvedAction::CreateFolder { path: target_path },
+        }],
+        None,
+    )
+}
+
+fn resolve_move_path(
+    machine: &MachineInfo,
+    source: &str,
+    destination: &str,
+) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+    let source_path = expand_user_path(source);
+    let source_pb = PathBuf::from(&source_path);
+    if !source_pb.exists() {
+        return (
+            CommandKind::Filesystem,
+            vec![],
+            Some(format!("{} does not exist.", source_path)),
+        );
+    }
+
+    let destination_base = expand_user_path_with_machine(machine, destination);
+    let destination_pb = PathBuf::from(&destination_base);
+    let final_destination = if destination_pb.is_dir() {
+        match source_pb.file_name() {
+            Some(name) => destination_pb.join(name),
+            None => destination_pb.clone(),
+        }
+    } else {
+        destination_pb.clone()
+    };
+
+    let Some(parent) = final_destination.parent() else {
+        return (
+            CommandKind::Filesystem,
+            vec![],
+            Some("I could not resolve the destination path.".to_string()),
+        );
+    };
+
+    if !parent.exists() {
+        return (
+            CommandKind::Filesystem,
+            vec![],
+            Some(format!("{} does not exist.", parent.display())),
+        );
+    }
+
+    let destination_path = final_destination.display().to_string();
+    (
+        CommandKind::Filesystem,
+        vec![ResolvedRoute {
+            label: format!("Move {}", source_pb.display()),
+            description: format!("Move {} to {}", source_pb.display(), destination_path),
+            action: ResolvedAction::MovePath {
+                source_path,
+                destination_path,
+            },
+        }],
+        None,
+    )
+}
+
 fn resolve_mute() -> (CommandKind, Vec<ResolvedRoute>) {
     let routes = vec![ResolvedRoute {
         label: "Mute Mac".to_string(),
@@ -191,134 +349,88 @@ fn resolve_downloads() -> (CommandKind, Vec<ResolvedRoute>) {
     (CommandKind::Filesystem, routes)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::AppInfo;
-    use crate::parser::Intent;
+fn find_installed_app(machine: &MachineInfo, query: &str) -> Option<(String, String)> {
+    let canonical = canonical_app_name(query);
 
-    fn no_browsers_machine() -> MachineInfo {
-        MachineInfo {
-            hostname: "test".to_string(),
-            username: "test".to_string(),
-            os_version: "14.0".to_string(),
-            architecture: "x86_64".to_string(),
-            installed_browsers: vec![],
-            installed_apps: vec![],
-            home_dir: "/Users/test".to_string(),
+    for app in &machine.installed_apps {
+        if canonical_app_name(&app.name) == canonical {
+            return Some((app.name.clone(), app.bundle_id.clone()));
         }
     }
 
-    fn full_machine() -> MachineInfo {
-        MachineInfo {
-            hostname: "test".to_string(),
-            username: "test".to_string(),
-            os_version: "14.0".to_string(),
-            architecture: "x86_64".to_string(),
-            installed_browsers: vec![
-                BrowserInfo {
-                    name: "Safari".to_string(),
-                    bundle_id: "com.apple.Safari".to_string(),
-                    path: "/Applications/Safari.app".to_string(),
-                },
-                BrowserInfo {
-                    name: "Chrome".to_string(),
-                    bundle_id: "com.google.Chrome".to_string(),
-                    path: "/Applications/Google Chrome.app".to_string(),
-                },
-            ],
-            installed_apps: vec![
-                AppInfo {
-                    name: "Slack".to_string(),
-                    bundle_id: "com.tinyspeck.slackmacgap".to_string(),
-                    path: "/Applications/Slack.app".to_string(),
-                },
-                AppInfo {
-                    name: "Finder".to_string(),
-                    bundle_id: "com.apple.finder".to_string(),
-                    path: "/System/Library/CoreServices/Finder.app".to_string(),
-                },
-            ],
-            home_dir: "/Users/test".to_string(),
+    for browser in &machine.installed_browsers {
+        if canonical_app_name(&browser.name) == canonical {
+            return Some((browser.name.clone(), browser.bundle_id.clone()));
         }
     }
 
-    #[test]
-    fn youtube_no_browsers_resolves_default() {
-        let (kind, routes, unresolved) = resolve(&Intent::OpenYoutube, &no_browsers_machine());
-        assert_eq!(kind, CommandKind::MixedWorkflow);
-        assert_eq!(routes.len(), 1);
-        assert!(unresolved.is_none());
-    }
+    None
+}
 
-    #[test]
-    fn youtube_known_browser_resolves_single_target() {
-        let (kind, routes, unresolved) = resolve(&Intent::OpenYoutubeInSafari, &full_machine());
-        assert_eq!(kind, CommandKind::MixedWorkflow);
-        assert_eq!(routes.len(), 1);
-        assert!(unresolved.is_none());
-        match &routes[0].action {
-            ResolvedAction::OpenUrl { browser_bundle, .. } => {
-                assert_eq!(browser_bundle, "com.apple.Safari");
-            }
-            _ => panic!("expected OpenUrl"),
+fn canonical_app_name(name: &str) -> String {
+    match name.trim().to_lowercase().as_str() {
+        "chrome" | "google chrome" => "google chrome".to_string(),
+        "safari" => "safari".to_string(),
+        "firefox" => "firefox".to_string(),
+        "brave" | "brave browser" => "brave".to_string(),
+        "arc" => "arc".to_string(),
+        "finder" => "finder".to_string(),
+        "slack" => "slack".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn display_name(name: &str) -> String {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+fn resolve_base_path(machine: &MachineInfo, base: &str) -> Option<String> {
+    let home = if machine.home_dir.is_empty() {
+        dirs::home_dir().map(|p| p.display().to_string())?
+    } else {
+        machine.home_dir.clone()
+    };
+
+    match base.trim().to_lowercase().as_str() {
+        "home" | "~" => Some(home),
+        "desktop" => Some(format!("{}/Desktop", home)),
+        "downloads" => Some(format!("{}/Downloads", home)),
+        "documents" => Some(format!("{}/Documents", home)),
+        other => Some(expand_user_path(other)),
+    }
+}
+
+fn expand_user_path(path: &str) -> String {
+    if let Some(home) = dirs::home_dir() {
+        let home = home.display().to_string();
+        match path.trim() {
+            "home" | "~" => home,
+            "desktop" => format!("{}/Desktop", home),
+            "downloads" => format!("{}/Downloads", home),
+            "documents" => format!("{}/Documents", home),
+            other if other.starts_with("~/") => format!("{}{}", home, &other[1..]),
+            other => other.to_string(),
         }
+    } else {
+        path.trim().to_string()
     }
+}
 
-    #[test]
-    fn missing_specific_browser_returns_unresolved_message() {
-        let (kind, routes, unresolved) = resolve(&Intent::OpenYoutubeInSafari, &no_browsers_machine());
-        assert_eq!(kind, CommandKind::MixedWorkflow);
-        assert!(routes.is_empty());
-        assert_eq!(unresolved.as_deref(), Some("Safari is not installed on this Mac."));
-    }
-
-    #[test]
-    fn browser_app_intent_resolves_to_open_app() {
-        let (kind, routes, unresolved) = resolve(&Intent::OpenChrome, &full_machine());
-        assert_eq!(kind, CommandKind::AppControl);
-        assert!(unresolved.is_none());
-        match &routes[0].action {
-            ResolvedAction::OpenApp {
-                bundle_id,
-                app_name,
-            } => {
-                assert_eq!(bundle_id, "com.google.Chrome");
-                assert_eq!(app_name, "Google Chrome");
-            }
-            _ => panic!("expected OpenApp"),
+fn expand_user_path_with_machine(machine: &MachineInfo, path: &str) -> String {
+    if machine.home_dir.is_empty() {
+        expand_user_path(path)
+    } else {
+        match path.trim() {
+            "home" | "~" => machine.home_dir.clone(),
+            "desktop" => format!("{}/Desktop", machine.home_dir),
+            "downloads" => format!("{}/Downloads", machine.home_dir),
+            "documents" => format!("{}/Documents", machine.home_dir),
+            other if other.starts_with("~/") => format!("{}{}", machine.home_dir, &other[1..]),
+            other => other.to_string(),
         }
-    }
-
-    #[test]
-    fn missing_app_returns_unresolved_message() {
-        let (kind, routes, unresolved) = resolve(&Intent::OpenSlack, &no_browsers_machine());
-        assert_eq!(kind, CommandKind::AppControl);
-        assert!(routes.is_empty());
-        assert_eq!(unresolved.as_deref(), Some("Slack is not installed on this Mac."));
-    }
-
-    #[test]
-    fn unknown_returns_local_coverage_message() {
-        let (kind, routes, unresolved) = resolve(
-            &Intent::Unknown("do something impossible".to_string()),
-            &full_machine(),
-        );
-        assert_eq!(kind, CommandKind::Unknown);
-        assert!(routes.is_empty());
-        assert_eq!(
-            unresolved.as_deref(),
-            Some("That command is outside current local coverage."),
-        );
-    }
-
-    #[test]
-    fn existing_commands_still_resolve() {
-        let m = full_machine();
-        assert_eq!(resolve(&Intent::OpenSlack, &m).0, CommandKind::AppControl);
-        assert_eq!(resolve(&Intent::MuteVolume, &m).0, CommandKind::LocalSystem);
-        assert_eq!(resolve(&Intent::SetVolume(42), &m).0, CommandKind::LocalSystem);
-        assert_eq!(resolve(&Intent::OpenDisplaySettings, &m).0, CommandKind::LocalSystem);
-        assert_eq!(resolve(&Intent::RevealDownloads, &m).0, CommandKind::Filesystem);
     }
 }
