@@ -8,7 +8,7 @@
   --accent-r0: #22c55e;
   --accent-r1: #eab308;
   --accent-r2: #f97316;
-  --accent-r3: #ef4444;
+  --accent-r3: #c66a6a;
   --strip-height: 60px;
   --strip-radius: 30px;
   --expanded-radius: 20px;
@@ -71,15 +71,16 @@ button {
 
 .app__panel {
   width: 100%;
-  height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
+  align-self: stretch;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--expanded-radius);
   overflow: hidden;
   box-shadow:
-    0 8px 48px rgba(0, 0, 0, 0.7),
+    0 8px 40px rgba(0, 0, 0, 0.62),
     0 1px 0 rgba(255, 255, 255, 0.03) inset;
   backdrop-filter: blur(24px) saturate(120%);
   -webkit-backdrop-filter: blur(24px) saturate(120%);
