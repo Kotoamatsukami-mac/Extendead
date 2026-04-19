@@ -100,6 +100,7 @@ pub struct ParsedCommand {
     pub risk: RiskLevel,
     pub requires_approval: bool,
     pub approval_status: ApprovalStatus,
+    pub unresolved_message: Option<String>,
 }
 
 // ── Execution event ──────────────────────────────────────────────────────────
