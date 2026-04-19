@@ -101,7 +101,7 @@ export function App() {
       if (cmd.routes.length === 0) {
         // No routes — show inline error, stay compact.
         setExecState('error');
-        showInlineFeedback('Command not recognised', 'error', 3500);
+        showInlineFeedback(getUnresolvedMessage(cmd), 'error', 2600);
         return;
       }
 
@@ -425,4 +425,23 @@ function getPrediction(inputValue: string, history: HistoryEntry[]): string {
   }
 
   return '';
+}
+
+function getUnresolvedMessage(cmd: ParsedCommand): string {
+  if (cmd.unresolved_message?.trim()) {
+    return cmd.unresolved_message.trim();
+  }
+
+  switch (cmd.kind) {
+    case 'unknown':
+      return 'That command is outside current local coverage.';
+    case 'app_control':
+      return 'I could not resolve that app action on this Mac.';
+    case 'settings':
+      return 'That settings route is not available yet.';
+    case 'ui_automation':
+      return 'That UI automation route is not available yet.';
+    default:
+      return 'I could not resolve a safe local route for that command.';
+  }
 }
