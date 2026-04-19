@@ -26,8 +26,6 @@ fn emit<R: Runtime>(app: &AppHandle<R>, event: ExecutionEvent) {
     let _ = app.emit(EXECUTION_EVENT_NAME, ExecutionEventPayload { event });
 }
 
-/// Map an AppError to the appropriate ExecutionOutcome.
-/// PermissionDenied must become Blocked — never silently downgraded.
 fn outcome_for_error(e: &AppError) -> ExecutionOutcome {
     match e {
         AppError::PermissionDenied(_) => ExecutionOutcome::Blocked,
@@ -38,7 +36,6 @@ fn outcome_for_error(e: &AppError) -> ExecutionOutcome {
     }
 }
 
-/// Build a concise, operator-readable failure message.
 fn human_message_for_error(e: &AppError) -> String {
     match e {
         AppError::PermissionDenied(detail) => {
@@ -49,7 +46,6 @@ fn human_message_for_error(e: &AppError) -> String {
     }
 }
 
-/// Execute a specific route on an approved command.
 pub fn execute<R: Runtime>(
     command: &ParsedCommand,
     route_index: usize,
@@ -57,14 +53,11 @@ pub fn execute<R: Runtime>(
 ) -> Result<ExecutionResult, AppError> {
     let start = Instant::now();
 
-    // Validate before execution — never skip this.
     validator::validate(command, route_index)?;
 
     let route = command.routes.get(route_index).expect("already validated");
     let command_id = command.id.as_str();
 
-    // For set_volume, capture the current volume before executing so the
-    // inverse action can restore it precisely rather than keeping it None.
     let pre_volume: Option<u8> = match &route.action {
         ResolvedAction::AppleScriptTemplate { template_id, .. } if template_id == "set_volume" => {
             applescript::get_volume()
@@ -87,7 +80,6 @@ pub fn execute<R: Runtime>(
 
     match result {
         Ok(message) => {
-            // Build inverse: for set_volume, use the captured pre-volume level.
             let inverse = if let Some(level) = pre_volume {
                 Some(ResolvedAction::AppleScriptTemplate {
                     script: format!("set volume output volume {level}"),
@@ -165,6 +157,20 @@ fn dispatch_action<R: Runtime>(
             );
             open_app(app_name, bundle_id)
         }
+        ResolvedAction::QuitApp {
+            bundle_id,
+            app_name,
+        } => {
+            emit(
+                app,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Closing {app_name}"),
+                ),
+            );
+            quit_app(app_name, bundle_id)
+        }
         ResolvedAction::AppleScriptTemplate {
             script,
             template_id,
@@ -208,6 +214,31 @@ fn dispatch_action<R: Runtime>(
             );
             open_path(path)
         }
+        ResolvedAction::CreateFolder { path } => {
+            emit(
+                app,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Creating folder {path}"),
+                ),
+            );
+            create_folder(path)
+        }
+        ResolvedAction::MovePath {
+            source_path,
+            destination_path,
+        } => {
+            emit(
+                app,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Moving {source_path} to {destination_path}"),
+                ),
+            );
+            move_path(source_path, destination_path)
+        }
     }
 }
 
@@ -239,7 +270,6 @@ fn open_url(_url: &str, _browser_bundle: &str, _browser_name: &str) -> Result<St
 
 #[cfg(target_os = "macos")]
 fn open_app(app_name: &str, bundle_id: &str) -> Result<String, AppError> {
-    // Prefer bundle ID (-b flag) for reliability; fall back to app name (-a flag).
     let mut cmd = std::process::Command::new("open");
     if !bundle_id.is_empty() {
         cmd.args(["-b", bundle_id]);
@@ -266,6 +296,34 @@ fn open_app(_app_name: &str, _bundle_id: &str) -> Result<String, AppError> {
 }
 
 #[cfg(target_os = "macos")]
+fn quit_app(app_name: &str, bundle_id: &str) -> Result<String, AppError> {
+    let script = if !bundle_id.is_empty() {
+        format!("tell application id \"{bundle_id}\" to quit")
+    } else {
+        format!("tell application \"{app_name}\" to quit")
+    };
+    let status = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .status()
+        .map_err(|e| AppError::ExecutionError(format!("quit failed: {e}")))?;
+    if status.success() {
+        Ok(format!("{app_name} closed"))
+    } else {
+        Err(AppError::ExecutionError(format!(
+            "quit {app_name} exited with status {status}"
+        )))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn quit_app(_app_name: &str, _bundle_id: &str) -> Result<String, AppError> {
+    Err(AppError::PlatformNotSupported(
+        "App quitting requires macOS".to_string(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
 fn open_path(path: &str) -> Result<String, AppError> {
     let status = std::process::Command::new("open")
         .arg(path)
@@ -285,4 +343,16 @@ fn open_path(_path: &str) -> Result<String, AppError> {
     Err(AppError::PlatformNotSupported(
         "Path opening requires macOS".to_string(),
     ))
+}
+
+fn create_folder(path: &str) -> Result<String, AppError> {
+    std::fs::create_dir_all(path)
+        .map_err(|e| AppError::ExecutionError(format!("create folder failed: {e}")))?;
+    Ok(format!("Created folder {path}"))
+}
+
+fn move_path(source_path: &str, destination_path: &str) -> Result<String, AppError> {
+    std::fs::rename(source_path, destination_path)
+        .map_err(|e| AppError::ExecutionError(format!("move failed: {e}")))?;
+    Ok(format!("Moved {source_path} to {destination_path}"))
 }
