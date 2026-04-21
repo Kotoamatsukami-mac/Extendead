@@ -1,12 +1,10 @@
 use crate::errors::AppError;
 use crate::models::{ParsedCommand, ResolvedAction};
+use crate::service_catalog;
 
 /// Approved AppleScript template IDs.
 static APPROVED_TEMPLATE_IDS: &[&str] =
     &["mute_volume", "unmute_volume", "set_volume", "get_volume"];
-
-/// Approved URL hostnames for OpenUrl actions.
-static APPROVED_URL_HOSTS: &[&str] = &["www.youtube.com", "youtube.com"];
 
 /// Approved bundle IDs for app actions.
 static APPROVED_BUNDLE_IDS: &[&str] = &[
@@ -63,7 +61,7 @@ fn validate_url(url: &str) -> Result<(), AppError> {
     let host = extract_host(url).ok_or_else(|| {
         AppError::ValidationError(format!("Cannot extract host from URL: {url}"))
     })?;
-    if !APPROVED_URL_HOSTS.contains(&host.as_str()) {
+    if !service_catalog::is_approved_service_host(&host) {
         return Err(AppError::ValidationError(format!(
             "URL host '{host}' is not on the approved list"
         )));
@@ -105,7 +103,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn approved_youtube_url_passes() {
+    fn approved_service_url_passes() {
         let action = ResolvedAction::OpenUrl {
             url: "https://www.youtube.com".to_string(),
             browser_bundle: String::new(),
