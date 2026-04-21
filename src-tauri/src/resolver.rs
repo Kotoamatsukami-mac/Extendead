@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::machine;
 use crate::models::{BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedRoute};
 use crate::parser::Intent;
+use crate::service_catalog;
 
 pub fn resolve(
     intent: &Intent,
@@ -11,23 +12,23 @@ pub fn resolve(
     let browsers = &machine.installed_browsers;
     match intent {
         Intent::OpenYoutube => {
-            let (kind, routes) = resolve_youtube(browsers);
+            let (kind, routes) = resolve_service_id(browsers, "youtube");
             (kind, routes, None)
         }
         Intent::OpenYoutubeInSafari => {
-            resolve_youtube_in_browser(machine, "Safari", "com.apple.Safari")
+            resolve_service_in_browser(machine, "youtube", "Safari", "com.apple.Safari")
         }
         Intent::OpenYoutubeInChrome => {
-            resolve_youtube_in_browser(machine, "Google Chrome", "com.google.Chrome")
+            resolve_service_in_browser(machine, "youtube", "Google Chrome", "com.google.Chrome")
         }
         Intent::OpenYoutubeInFirefox => {
-            resolve_youtube_in_browser(machine, "Firefox", "org.mozilla.firefox")
+            resolve_service_in_browser(machine, "youtube", "Firefox", "org.mozilla.firefox")
         }
         Intent::OpenYoutubeInBrave => {
-            resolve_youtube_in_browser(machine, "Brave", "com.brave.Browser")
+            resolve_service_in_browser(machine, "youtube", "Brave", "com.brave.Browser")
         }
         Intent::OpenYoutubeInArc => {
-            resolve_youtube_in_browser(machine, "Arc", "company.thebrowser.Browser")
+            resolve_service_in_browser(machine, "youtube", "Arc", "company.thebrowser.Browser")
         }
         Intent::OpenSafari => resolve_open_app(machine, "Safari", "com.apple.Safari"),
         Intent::OpenChrome => resolve_open_app(machine, "Google Chrome", "com.google.Chrome"),
@@ -36,6 +37,7 @@ pub fn resolve(
         Intent::OpenArc => resolve_open_app(machine, "Arc", "company.thebrowser.Browser"),
         Intent::OpenFinder => resolve_open_app(machine, "Finder", "com.apple.finder"),
         Intent::OpenSlack => resolve_open_app(machine, "Slack", "com.tinyspeck.slackmacgap"),
+        Intent::OpenService(service_id) => resolve_service(machine, service_id),
         Intent::OpenAppNamed(name) => resolve_app_named(machine, name, false),
         Intent::CloseAppNamed(name) => resolve_app_named(machine, name, true),
         Intent::OpenPath(path) => resolve_open_path(path),
@@ -65,14 +67,33 @@ pub fn resolve(
     }
 }
 
-fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>) {
-    let url = "https://www.youtube.com";
+fn resolve_service(
+    machine: &MachineInfo,
+    service_id: &str,
+) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+    if service_catalog::service_by_id(service_id).is_none() {
+        return (
+            CommandKind::MixedWorkflow,
+            vec![],
+            Some("That service is outside current local coverage.".to_string()),
+        );
+    }
+
+    let (kind, routes) = resolve_service_id(&machine.installed_browsers, service_id);
+    (kind, routes, None)
+}
+
+fn resolve_service_id(browsers: &[BrowserInfo], service_id: &str) -> (CommandKind, Vec<ResolvedRoute>) {
+    let Some(service) = service_catalog::service_by_id(service_id) else {
+        return (CommandKind::MixedWorkflow, vec![]);
+    };
+
     let routes: Vec<ResolvedRoute> = if browsers.is_empty() {
         vec![ResolvedRoute {
-            label: "Open YouTube".to_string(),
-            description: "Open youtube.com in default browser".to_string(),
+            label: format!("Open {}", service.display_name),
+            description: format!("Open {} in default browser", service.display_name),
             action: ResolvedAction::OpenUrl {
-                url: url.to_string(),
+                url: service.url.to_string(),
                 browser_bundle: String::new(),
                 browser_name: "Default Browser".to_string(),
             },
@@ -82,20 +103,22 @@ fn resolve_youtube(browsers: &[BrowserInfo]) -> (CommandKind, Vec<ResolvedRoute>
             .iter()
             .map(|b| ResolvedRoute {
                 label: format!("Open in {}", b.name),
-                description: format!("Open youtube.com in {}", b.name),
+                description: format!("Open {} in {}", service.display_name, b.name),
                 action: ResolvedAction::OpenUrl {
-                    url: url.to_string(),
+                    url: service.url.to_string(),
                     browser_bundle: b.bundle_id.clone(),
                     browser_name: b.name.clone(),
                 },
             })
             .collect()
     };
+
     (CommandKind::MixedWorkflow, routes)
 }
 
-fn resolve_youtube_in_browser(
+fn resolve_service_in_browser(
     machine: &MachineInfo,
+    service_id: &str,
     browser_name: &str,
     bundle_id: &str,
 ) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
@@ -107,13 +130,21 @@ fn resolve_youtube_in_browser(
         );
     }
 
+    let Some(service) = service_catalog::service_by_id(service_id) else {
+        return (
+            CommandKind::MixedWorkflow,
+            vec![],
+            Some("That service is outside current local coverage.".to_string()),
+        );
+    };
+
     (
         CommandKind::MixedWorkflow,
         vec![ResolvedRoute {
-            label: format!("Open YouTube in {browser_name}"),
-            description: format!("Open youtube.com in {browser_name}"),
+            label: format!("Open {} in {browser_name}", service.display_name),
+            description: format!("Open {} in {browser_name}", service.display_name),
             action: ResolvedAction::OpenUrl {
-                url: "https://www.youtube.com".to_string(),
+                url: service.url.to_string(),
                 browser_bundle: bundle_id.to_string(),
                 browser_name: browser_name.to_string(),
             },
