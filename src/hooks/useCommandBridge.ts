@@ -9,6 +9,7 @@ import type {
   ParsedCommand,
   PermissionStatus,
   ProviderKeyStatus,
+  ServiceDefinition,
 } from '../types/commands';
 import type { ExecutionEvent, ExecutionEventPayload } from '../types/events';
 
@@ -107,6 +108,14 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     }
   }, []);
 
+  const getServiceCatalog = useCallback(async (): Promise<ServiceDefinition[]> => {
+    try {
+      return await invoke<ServiceDefinition[]>('get_service_catalog');
+    } catch {
+      return [];
+    }
+  }, []);
+
   const setWindowMode = useCallback(
     async (mode: 'lounge' | 'expanded'): Promise<void> => {
       try {
@@ -166,6 +175,7 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     getMachineInfo,
     getPermissionStatus,
     getHistory,
+    getServiceCatalog,
     setWindowMode,
     toggleAlwaysOnTop,
     getProviderKeyStatus,
