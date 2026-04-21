@@ -17,7 +17,7 @@ pub async fn parse_command(
     state: tauri::State<'_, AppState>,
 ) -> Result<ParsedCommand, String> {
     let normalized = parser::normalize(&input);
-    let intent = parser::parse_intent(&normalized);
+    let intent = parser::parse_intent(&input);
 
     let machine_info = {
         let inner = state.inner.lock().map_err(|_| "state lock error")?;
@@ -35,7 +35,7 @@ pub async fn parse_command(
             })
     };
 
-    let (kind, routes, unresolved_message) = resolver::resolve(&intent, &machine_info);
+    let (kind, routes, unresolved_code, unresolved_message) = resolver::resolve(&intent, &machine_info);
 
     let cmd = ParsedCommand {
         id: uuid::Uuid::new_v4().to_string(),
@@ -46,6 +46,7 @@ pub async fn parse_command(
         risk: crate::models::RiskLevel::R0,
         requires_approval: false,
         approval_status: ApprovalStatus::NotRequired,
+        unresolved_code,
         unresolved_message,
     };
 
@@ -208,6 +209,7 @@ pub async fn undo_last(
         risk: crate::models::RiskLevel::R1,
         requires_approval: false,
         approval_status: ApprovalStatus::NotRequired,
+        unresolved_code: None,
         unresolved_message: None,
     };
 
