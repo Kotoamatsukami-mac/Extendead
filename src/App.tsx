@@ -678,6 +678,29 @@ function looksLikePath(value: string): boolean {
 }
 
 function getUnresolvedMessage(cmd: ParsedCommand): string {
+  switch (cmd.unresolved_code) {
+    case 'unsupported_command':
+      return 'That command is outside current local coverage.';
+    case 'unsupported_service':
+      return 'That service is outside current local coverage.';
+    case 'browser_not_installed':
+      return cmd.unresolved_message?.trim() || 'That browser is not installed on this Mac.';
+    case 'app_not_installed':
+      return cmd.unresolved_message?.trim() || 'That app is not installed on this Mac.';
+    case 'path_not_found':
+      return cmd.unresolved_message?.trim() || 'That path does not exist.';
+    case 'base_path_unresolved':
+      return cmd.unresolved_message?.trim() || 'I could not resolve where to create that folder.';
+    case 'target_already_exists':
+      return cmd.unresolved_message?.trim() || 'That target already exists.';
+    case 'destination_path_unresolved':
+      return cmd.unresolved_message?.trim() || 'I could not resolve the destination path.';
+    case 'destination_parent_missing':
+      return cmd.unresolved_message?.trim() || 'The destination parent folder does not exist.';
+    default:
+      break;
+  }
+
   if (cmd.unresolved_message?.trim()) {
     return cmd.unresolved_message.trim();
   }
