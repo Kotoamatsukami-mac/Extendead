@@ -23,6 +23,7 @@ pub mod planner;
 pub mod provider_keys;
 pub mod resolver;
 pub mod risk;
+pub mod service_catalog;
 pub mod ui_automation;
 pub mod validator;
 
@@ -104,6 +105,7 @@ pub fn run() {
             commands::get_machine_info,
             commands::get_permission_status,
             commands::get_history,
+            commands::get_service_catalog,
             commands::undo_last,
             commands::set_window_mode,
             commands::toggle_always_on_top,
