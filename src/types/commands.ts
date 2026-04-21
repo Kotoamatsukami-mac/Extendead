@@ -160,3 +160,11 @@ export interface CommandSuggestion {
   canonical: string;
   detail: string;
 }
+
+export interface ServiceDefinition {
+  id: string;
+  display_name: string;
+  aliases: string[];
+  url: string;
+  category: string;
+}
