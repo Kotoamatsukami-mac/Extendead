@@ -23,6 +23,7 @@ export type UnresolvedCode =
   | 'browser_not_installed'
   | 'app_not_installed'
   | 'path_not_found'
+  | 'source_path_not_found'
   | 'base_path_unresolved'
   | 'target_already_exists'
   | 'destination_path_unresolved'

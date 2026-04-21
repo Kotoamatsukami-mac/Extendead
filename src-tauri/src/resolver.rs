@@ -271,7 +271,7 @@ fn resolve_move_path(machine: &MachineInfo, source: &str, destination: &str) -> 
         return (
             CommandKind::Filesystem,
             vec![],
-            Some(UnresolvedCode::PathNotFound),
+            Some(UnresolvedCode::SourcePathNotFound),
             Some(format!("{} does not exist.", source_path)),
         );
     }

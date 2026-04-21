@@ -695,6 +695,8 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
       return cmd.unresolved_message?.trim() || 'That app is not installed on this Mac.';
     case 'path_not_found':
       return cmd.unresolved_message?.trim() || 'That path does not exist.';
+    case 'source_path_not_found':
+      return cmd.unresolved_message?.trim() || 'The source path does not exist.';
     case 'base_path_unresolved':
       return cmd.unresolved_message?.trim() || 'I could not resolve where to create that folder.';
     case 'target_already_exists':

@@ -51,6 +51,7 @@ pub enum UnresolvedCode {
     BrowserNotInstalled,
     AppNotInstalled,
     PathNotFound,
+    SourcePathNotFound,
     BasePathUnresolved,
     TargetAlreadyExists,
     DestinationPathUnresolved,

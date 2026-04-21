@@ -1,6 +1,7 @@
 use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
+use crate::intent_language::{CandidateIntent, CanonicalAction};
 use crate::models::{
     ApprovalStatus, ExecutionEvent, ExecutionEventKind, ExecutionOutcome, ExecutionResult,
     HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
@@ -23,31 +24,49 @@ fn interpreted_intent(input: &str) -> Option<parser::Intent> {
     intent_from_candidate(candidate)
 }
 
-fn intent_from_candidate(candidate: &arbiter::CandidateIntent) -> Option<parser::Intent> {
-    let action = candidate.canonical_action.trim();
+fn intent_from_candidate(candidate: &CandidateIntent) -> Option<parser::Intent> {
+    let slot = |name: &str| {
+        candidate
+            .slots
+            .get(name)
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+    };
 
-    if let Some(app) = action.strip_prefix("open_app:") {
-        let app = app.trim();
-        if !app.is_empty() {
-            return Some(parser::Intent::OpenAppNamed(app.to_string()));
+    match candidate.canonical_action {
+        CanonicalAction::OpenApp => slot("app").map(|app| parser::Intent::OpenAppNamed(app.to_string())),
+        CanonicalAction::QuitApp => {
+            slot("app").map(|app| parser::Intent::CloseAppNamed(app.to_string()))
         }
-    }
-
-    if let Some(app) = action.strip_prefix("quit_app:") {
-        let app = app.trim();
-        if !app.is_empty() {
-            return Some(parser::Intent::CloseAppNamed(app.to_string()));
+        CanonicalAction::OpenPath => slot("path").map(|path| parser::Intent::OpenPath(path.to_string())),
+        CanonicalAction::OpenService => {
+            let service = slot("service")?;
+            match slot("browser") {
+                Some(browser) => Some(parser::Intent::OpenServiceInBrowser {
+                    service_id: service.to_string(),
+                    browser: browser.to_string(),
+                }),
+                None => Some(parser::Intent::OpenService(service.to_string())),
+            }
         }
-    }
-
-    if let Some(path) = action.strip_prefix("open_path:") {
-        let path = path.trim();
-        if !path.is_empty() {
-            return Some(parser::Intent::OpenPath(path.to_string()));
+        CanonicalAction::CreateFolder => {
+            let name = slot("name")?;
+            let base = slot("base").or_else(|| slot("base_path")).map(|value| value.to_string());
+            Some(parser::Intent::CreateFolder {
+                name: name.to_string(),
+                base,
+            })
         }
+        CanonicalAction::MovePath => {
+            let source = slot("source")?;
+            let destination = slot("destination")?;
+            Some(parser::Intent::MovePath {
+                source: source.to_string(),
+                destination: destination.to_string(),
+            })
+        }
+        CanonicalAction::Unknown => None,
     }
-
-    None
 }
 
 // ── parse_command ─────────────────────────────────────────────────────────────
@@ -370,4 +389,62 @@ pub async fn set_provider_key(provider: String, key: String) -> Result<(), Strin
 #[tauri::command]
 pub async fn delete_provider_key(provider: String) -> Result<(), String> {
     provider_keys::delete_key(&provider).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    use crate::intent_language::{ExecutorFamily, IntentFamily, InterpretationSource};
+    use crate::models::RiskLevel;
+
+    fn candidate(action: CanonicalAction, slots: &[(&str, &str)]) -> CandidateIntent {
+        let slot_map = slots
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect::<BTreeMap<_, _>>();
+
+        CandidateIntent {
+            family: IntentFamily::Unknown,
+            canonical_action: action,
+            slots: slot_map,
+            missing_slots: vec![],
+            confidence: 0.95,
+            clarification_needed: false,
+            risk_baseline: RiskLevel::R0,
+            executor_family: ExecutorFamily::Unknown,
+            source: InterpretationSource::LocalPattern,
+        }
+    }
+
+    #[test]
+    fn maps_open_app_candidate_to_intent() {
+        let c = candidate(CanonicalAction::OpenApp, &[("app", "Slack")]);
+        assert_eq!(
+            intent_from_candidate(&c),
+            Some(parser::Intent::OpenAppNamed("Slack".to_string()))
+        );
+    }
+
+    #[test]
+    fn maps_open_service_candidate_with_browser_to_intent() {
+        let c = candidate(
+            CanonicalAction::OpenService,
+            &[("service", "youtube"), ("browser", "safari")],
+        );
+        assert_eq!(
+            intent_from_candidate(&c),
+            Some(parser::Intent::OpenServiceInBrowser {
+                service_id: "youtube".to_string(),
+                browser: "safari".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn returns_none_when_required_slots_missing() {
+        let c = candidate(CanonicalAction::MovePath, &[("source", "~/Desktop/a.txt")]);
+        assert_eq!(intent_from_candidate(&c), None);
+    }
 }
