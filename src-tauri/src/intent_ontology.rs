@@ -1,65 +1,72 @@
+use crate::intent_language::{CanonicalAction, ExecutorFamily, IntentFamily};
 use crate::models::RiskLevel;
 
 #[derive(Debug, Clone)]
 pub struct ActionDefinition {
-    pub family: &'static str,
-    pub canonical_action: &'static str,
+    pub family: IntentFamily,
+    pub canonical_action: CanonicalAction,
     pub surface_synonyms: &'static [&'static str],
     pub required_slots: &'static [&'static str],
     pub optional_slots: &'static [&'static str],
     pub clarification_prompts: &'static [&'static str],
+    pub executor_family: ExecutorFamily,
     pub risk_baseline: RiskLevel,
     pub reversible: bool,
 }
 
 pub static ACTIONS: &[ActionDefinition] = &[
     ActionDefinition {
-        family: "app.open",
-        canonical_action: "open_app",
+        family: IntentFamily::AppOpen,
+        canonical_action: CanonicalAction::OpenApp,
         surface_synonyms: &["open", "launch", "start", "run"],
         required_slots: &["app"],
         optional_slots: &[],
         clarification_prompts: &["Which app should I open?"],
+        executor_family: ExecutorFamily::App,
         risk_baseline: RiskLevel::R0,
         reversible: false,
     },
     ActionDefinition {
-        family: "app.close",
-        canonical_action: "quit_app",
+        family: IntentFamily::AppClose,
+        canonical_action: CanonicalAction::QuitApp,
         surface_synonyms: &["close", "quit", "exit", "shut"],
         required_slots: &["app"],
         optional_slots: &[],
         clarification_prompts: &["Which app should I close?"],
+        executor_family: ExecutorFamily::App,
         risk_baseline: RiskLevel::R1,
         reversible: true,
     },
     ActionDefinition {
-        family: "path.open",
-        canonical_action: "open_path",
+        family: IntentFamily::PathOpen,
+        canonical_action: CanonicalAction::OpenPath,
         surface_synonyms: &["open", "show", "reveal"],
         required_slots: &["path"],
         optional_slots: &[],
         clarification_prompts: &["Which file or folder should I open?"],
+        executor_family: ExecutorFamily::Path,
         risk_baseline: RiskLevel::R0,
         reversible: false,
     },
     ActionDefinition {
-        family: "folder.create",
-        canonical_action: "create_folder",
+        family: IntentFamily::FolderCreate,
+        canonical_action: CanonicalAction::CreateFolder,
         surface_synonyms: &["create folder", "make folder", "new folder"],
         required_slots: &["name"],
         optional_slots: &["base_path"],
         clarification_prompts: &["What should I name the folder?", "Where should I create it?"],
+        executor_family: ExecutorFamily::Filesystem,
         risk_baseline: RiskLevel::R1,
         reversible: true,
     },
     ActionDefinition {
-        family: "file.move",
-        canonical_action: "move_path",
+        family: IntentFamily::FileMove,
+        canonical_action: CanonicalAction::MovePath,
         surface_synonyms: &["move", "put", "place"],
         required_slots: &["source", "destination"],
         optional_slots: &[],
         clarification_prompts: &["What should I move?", "Where should I move it?"],
+        executor_family: ExecutorFamily::Filesystem,
         risk_baseline: RiskLevel::R2,
         reversible: true,
     },
@@ -75,7 +82,7 @@ pub fn actions_for_surface_token(token: &str) -> Vec<&'static ActionDefinition> 
         .iter()
         .filter(|action| {
             action.surface_synonyms.iter().any(|surface| {
-                normalized == *surface || normalized.starts_with(surface)
+                normalized == *surface || normalized.starts_with(&format!("{surface} "))
             })
         })
         .collect()
