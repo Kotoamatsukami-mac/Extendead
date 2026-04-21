@@ -2,12 +2,6 @@ use crate::service_catalog;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Intent {
-    OpenYoutube,
-    OpenYoutubeInSafari,
-    OpenYoutubeInChrome,
-    OpenYoutubeInFirefox,
-    OpenYoutubeInBrave,
-    OpenYoutubeInArc,
     OpenSafari,
     OpenChrome,
     OpenFirefox,
@@ -16,6 +10,10 @@ pub enum Intent {
     OpenFinder,
     OpenSlack,
     OpenService(String),
+    OpenServiceInBrowser {
+        service_id: String,
+        browser: String,
+    },
     CloseAppNamed(String),
     OpenAppNamed(String),
     OpenPath(String),
@@ -79,32 +77,6 @@ pub fn parse_intent(raw: &str) -> Intent {
         return Intent::OpenSlack;
     }
 
-    if matches_any(s, &["open youtube in safari"]) {
-        return Intent::OpenYoutubeInSafari;
-    }
-    if matches_any(
-        s,
-        &["open youtube in chrome", "open youtube in google chrome"],
-    ) {
-        return Intent::OpenYoutubeInChrome;
-    }
-    if matches_any(s, &["open youtube in firefox"]) {
-        return Intent::OpenYoutubeInFirefox;
-    }
-    if matches_any(
-        s,
-        &["open youtube in brave", "open youtube in brave browser"],
-    ) {
-        return Intent::OpenYoutubeInBrave;
-    }
-    if matches_any(s, &["open youtube in arc"]) {
-        return Intent::OpenYoutubeInArc;
-    }
-
-    if matches_any(s, &["open youtube", "youtube"]) {
-        return Intent::OpenYoutube;
-    }
-
     if matches_any(s, &["open safari", "safari"]) {
         return Intent::OpenSafari;
     }
@@ -130,6 +102,10 @@ pub fn parse_intent(raw: &str) -> Intent {
     }
     if matches_any(s, &["open arc", "arc"]) {
         return Intent::OpenArc;
+    }
+
+    if let Some(intent) = extract_service_open_in_browser(raw) {
+        return intent;
     }
 
     if let Some(service_id) = extract_service_open(raw) {
@@ -182,6 +158,30 @@ fn extract_volume_level(s: &str) -> Option<u8> {
             }
         }
     }
+    None
+}
+
+fn extract_service_open_in_browser(raw: &str) -> Option<Intent> {
+    let trimmed = raw.trim();
+    let normalized = normalize(trimmed);
+
+    for prefix in ["open ", "watch ", "browse ", "visit "] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            let (service_query, browser_query) = rest.rsplit_once(" in ")?;
+            let service = service_catalog::find_service_by_query(service_query.trim())?;
+            let browser = trimmed
+                .get(prefix.len() + service_query.len() + " in ".len()..)?
+                .trim();
+            if browser.is_empty() {
+                return None;
+            }
+            return Some(Intent::OpenServiceInBrowser {
+                service_id: service.id.to_string(),
+                browser: clean_token(browser),
+            });
+        }
+    }
+
     None
 }
 
@@ -376,14 +376,20 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_youtube_in_browser() {
+    fn test_parse_service_open_in_browser() {
         assert_eq!(
             parse_intent("open youtube in safari"),
-            Intent::OpenYoutubeInSafari
+            Intent::OpenServiceInBrowser {
+                service_id: "youtube".to_string(),
+                browser: "safari".to_string(),
+            }
         );
         assert_eq!(
-            parse_intent("open youtube in chrome"),
-            Intent::OpenYoutubeInChrome
+            parse_intent("watch disney plus in chrome"),
+            Intent::OpenServiceInBrowser {
+                service_id: "disney_plus".to_string(),
+                browser: "chrome".to_string(),
+            }
         );
     }
 
