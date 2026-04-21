@@ -7,7 +7,7 @@ use crate::models::{
 };
 use crate::provider_keys::ProviderKeyStatus;
 use crate::{executor, history, machine, parser, permissions, provider_keys, resolver, risk};
-use crate::{AppState, APP_CONFIG_MAX_HISTORY};
+use crate::{service_catalog, AppState, APP_CONFIG_MAX_HISTORY};
 
 // ── parse_command ─────────────────────────────────────────────────────────────
 
@@ -166,6 +166,13 @@ pub async fn get_permission_status() -> Result<PermissionStatus, String> {
 pub async fn get_history(state: tauri::State<'_, AppState>) -> Result<Vec<HistoryEntry>, String> {
     let inner = state.inner.lock().map_err(|_| "state lock error")?;
     Ok(inner.history.clone())
+}
+
+// ── get_service_catalog ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_service_catalog() -> Result<Vec<service_catalog::ServiceDefinition>, String> {
+    Ok(service_catalog::all_services().to_vec())
 }
 
 // ── undo_last ─────────────────────────────────────────────────────────────────
