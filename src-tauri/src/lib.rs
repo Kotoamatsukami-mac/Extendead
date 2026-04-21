@@ -11,6 +11,7 @@ pub mod errors;
 pub mod events;
 pub mod executor;
 pub mod history;
+pub mod intent_language;
 pub mod intent_ontology;
 pub mod interpret_commands;
 pub mod interpret_local;
