@@ -1,6 +1,10 @@
+use serde::{Deserialize, Serialize};
+
+use crate::intent_language::CandidateIntent;
 use crate::models::RiskLevel;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum ArbitrationDecision {
     Execute,
     Clarify,
@@ -8,17 +12,7 @@ pub enum ArbitrationDecision {
     Deny,
 }
 
-#[derive(Debug, Clone)]
-pub struct CandidateIntent {
-    pub family: String,
-    pub canonical_action: String,
-    pub missing_slots: Vec<String>,
-    pub confidence: f32,
-    pub clarification_needed: bool,
-    pub risk_baseline: RiskLevel,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArbitrationResult {
     pub decision: ArbitrationDecision,
     pub chosen_index: Option<usize>,
