@@ -41,6 +41,22 @@ pub enum ApprovalStatus {
     Denied,
 }
 
+// ── Unresolved command state ─────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UnresolvedCode {
+    UnsupportedCommand,
+    UnsupportedService,
+    BrowserNotInstalled,
+    AppNotInstalled,
+    PathNotFound,
+    BasePathUnresolved,
+    TargetAlreadyExists,
+    DestinationPathUnresolved,
+    DestinationParentMissing,
+}
+
 // ── Execution outcome ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -111,6 +127,7 @@ pub struct ParsedCommand {
     pub risk: RiskLevel,
     pub requires_approval: bool,
     pub approval_status: ApprovalStatus,
+    pub unresolved_code: Option<UnresolvedCode>,
     pub unresolved_message: Option<String>,
 }
 
