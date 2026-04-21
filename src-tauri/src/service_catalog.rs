@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ServiceDefinition {
     pub id: &'static str,
     pub display_name: &'static str,
