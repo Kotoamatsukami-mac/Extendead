@@ -1,3 +1,5 @@
+use crate::service_catalog;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Intent {
     OpenYoutube,
@@ -13,6 +15,7 @@ pub enum Intent {
     OpenArc,
     OpenFinder,
     OpenSlack,
+    OpenService(String),
     CloseAppNamed(String),
     OpenAppNamed(String),
     OpenPath(String),
@@ -129,6 +132,10 @@ pub fn parse_intent(raw: &str) -> Intent {
         return Intent::OpenArc;
     }
 
+    if let Some(service_id) = extract_service_open(raw) {
+        return Intent::OpenService(service_id);
+    }
+
     if let Some(intent) = extract_move_path(raw) {
         return intent;
     }
@@ -178,6 +185,25 @@ fn extract_volume_level(s: &str) -> Option<u8> {
     None
 }
 
+fn extract_service_open(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let normalized = normalize(trimmed);
+
+    if let Some(service) = service_catalog::find_service_by_query(&normalized) {
+        return Some(service.id.to_string());
+    }
+
+    for prefix in ["open ", "watch ", "browse ", "go to ", "visit "] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            if let Some(service) = service_catalog::find_service_by_query(rest.trim()) {
+                return Some(service.id.to_string());
+            }
+        }
+    }
+
+    None
+}
+
 fn extract_close_app_name(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     let lower = normalize(trimmed);
@@ -202,6 +228,9 @@ fn extract_open_app_name(raw: &str) -> Option<String> {
         if let Some(_rest) = lower.strip_prefix(prefix) {
             let raw_rest = trimmed.get(prefix.len()..)?.trim();
             if raw_rest.is_empty() || looks_like_path(raw_rest) || looks_like_url(raw_rest) {
+                return None;
+            }
+            if service_catalog::find_service_by_query(raw_rest).is_some() {
                 return None;
             }
             return Some(clean_token(raw_rest));
@@ -368,6 +397,22 @@ mod tests {
             Intent::OpenDisplaySettings
         );
         assert_eq!(parse_intent("slack"), Intent::OpenSlack);
+    }
+
+    #[test]
+    fn test_parse_service_open() {
+        assert_eq!(
+            parse_intent("netflix"),
+            Intent::OpenService("netflix".to_string())
+        );
+        assert_eq!(
+            parse_intent("open reddit"),
+            Intent::OpenService("reddit".to_string())
+        );
+        assert_eq!(
+            parse_intent("watch disney plus"),
+            Intent::OpenService("disney_plus".to_string())
+        );
     }
 
     #[test]
