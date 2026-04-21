@@ -16,6 +16,8 @@ pub enum IntentFamily {
     FolderCreate,
     #[serde(rename = "file.move")]
     FileMove,
+    #[serde(rename = "service.open")]
+    ServiceOpen,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -32,6 +34,8 @@ pub enum CanonicalAction {
     CreateFolder,
     #[serde(rename = "move_path")]
     MovePath,
+    #[serde(rename = "open_service")]
+    OpenService,
     #[serde(rename = "unknown")]
     Unknown,
 }
