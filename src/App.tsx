@@ -67,7 +67,7 @@ export function App() {
   const feedbackTimerRef = useRef<number>(0);
 
   const { machineInfo } = useMachineState();
-  const { permissionStatus } = usePermissionStatus();
+  const { permissionStatus, refresh: refreshPermissionStatus } = usePermissionStatus();
 
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
   parsedCommandRef.current = parsedCommand;
@@ -162,6 +162,12 @@ export function App() {
   useEffect(() => {
     bridge.getHistory().then(setHistory);
     bridge.getServiceCatalog().then(setServiceCatalog);
+    bridge.getAppConfig().then((config) => {
+      if (config) {
+        setAlwaysOnTop(config.always_on_top);
+      }
+    });
+    void refreshPermissionStatus();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -545,7 +551,7 @@ function getCommandSuggestions(
 function getInstalledAppNames(machineInfo: MachineInfo | null): string[] {
   const fromApps = machineInfo?.installed_apps?.map((app) => app.name) ?? [];
   const fromBrowsers = machineInfo?.installed_browsers?.map((app) => app.name) ?? [];
-  const merged = [...fromApps, ...fromBrowsers, 'Safari', 'Google Chrome', 'Firefox', 'Brave', 'Arc', 'Finder', 'Slack'];
+  const merged = [...fromApps, ...fromBrowsers];
   return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
 }
 

@@ -53,6 +53,16 @@ static APP_CANDIDATES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Return true when a bundle id is part of Extendead's controlled app catalog.
+pub fn is_supported_bundle_id(bundle_id: &str) -> bool {
+    BROWSER_CANDIDATES
+        .iter()
+        .any(|(_, candidate_bundle_id, _)| *candidate_bundle_id == bundle_id)
+        || APP_CANDIDATES
+            .iter()
+            .any(|(_, candidate_bundle_id, _)| *candidate_bundle_id == bundle_id)
+}
+
 /// Scan for installed browsers by checking well-known application paths.
 pub fn scan_browsers() -> Vec<BrowserInfo> {
     BROWSER_CANDIDATES

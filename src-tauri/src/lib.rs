@@ -104,6 +104,7 @@ pub fn run() {
             commands::deny_command,
             commands::get_machine_info,
             commands::get_permission_status,
+            commands::get_app_config,
             commands::get_history,
             commands::get_service_catalog,
             commands::undo_last,

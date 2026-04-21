@@ -1,21 +1,13 @@
 use crate::errors::AppError;
+use crate::machine;
 use crate::models::{ParsedCommand, ResolvedAction};
 use crate::service_catalog;
+use std::io;
+use std::path::{Component, Path, PathBuf};
 
 /// Approved AppleScript template IDs.
 static APPROVED_TEMPLATE_IDS: &[&str] =
     &["mute_volume", "unmute_volume", "set_volume", "get_volume"];
-
-/// Approved bundle IDs for app actions.
-static APPROVED_BUNDLE_IDS: &[&str] = &[
-    "com.tinyspeck.slackmacgap",
-    "com.google.Chrome",
-    "com.apple.Safari",
-    "org.mozilla.firefox",
-    "com.brave.Browser",
-    "company.thebrowser.Browser",
-    "com.apple.finder",
-];
 
 /// Validate that a parsed command and its selected route are safe to execute.
 pub fn validate(command: &ParsedCommand, route_index: usize) -> Result<(), AppError> {
@@ -70,9 +62,9 @@ fn validate_url(url: &str) -> Result<(), AppError> {
 }
 
 fn validate_bundle_id(bundle_id: &str) -> Result<(), AppError> {
-    if !APPROVED_BUNDLE_IDS.contains(&bundle_id) {
+    if !machine::is_supported_bundle_id(bundle_id) {
         return Err(AppError::ValidationError(format!(
-            "Bundle ID '{bundle_id}' is not on the approved list"
+            "Bundle ID '{bundle_id}' is outside the controlled app catalog"
         )));
     }
     Ok(())
@@ -80,14 +72,70 @@ fn validate_bundle_id(bundle_id: &str) -> Result<(), AppError> {
 
 fn validate_home_path(path: &str) -> Result<(), AppError> {
     let home = dirs::home_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_default();
-    if !home.is_empty() && !path.starts_with(&home) {
+        .ok_or_else(|| AppError::ValidationError("Cannot resolve home directory".to_string()))?;
+    let home_canonical = std::fs::canonicalize(&home).map_err(|e| {
+        AppError::ValidationError(format!("Cannot canonicalize home directory: {e}"))
+    })?;
+
+    let requested = Path::new(path);
+    let requested_canonical = canonicalize_path_for_boundary(requested).map_err(|e| {
+        AppError::ValidationError(format!("Path '{path}' cannot be resolved safely: {e}"))
+    })?;
+
+    if !requested_canonical.starts_with(&home_canonical) {
         return Err(AppError::ValidationError(format!(
             "Path '{path}' is outside the home directory"
         )));
     }
     Ok(())
+}
+
+fn canonicalize_path_for_boundary(path: &Path) -> io::Result<PathBuf> {
+    if !path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path must be absolute",
+        ));
+    }
+
+    for component in path.components() {
+        if matches!(component, Component::ParentDir) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "parent traversal is not allowed",
+            ));
+        }
+    }
+
+    if path.exists() {
+        return std::fs::canonicalize(path);
+    }
+
+    let mut unresolved_components = Vec::new();
+    let mut cursor = path;
+
+    while !cursor.exists() {
+        let Some(file_name) = cursor.file_name() else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot resolve path root",
+            ));
+        };
+        unresolved_components.push(file_name.to_os_string());
+        let Some(parent) = cursor.parent() else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path has no parent",
+            ));
+        };
+        cursor = parent;
+    }
+
+    let mut canonical = std::fs::canonicalize(cursor)?;
+    for component in unresolved_components.into_iter().rev() {
+        canonical.push(component);
+    }
+    Ok(canonical)
 }
 
 fn extract_host(url: &str) -> Option<String> {
@@ -163,6 +211,17 @@ mod tests {
     }
 
     #[test]
+    fn create_folder_with_home_prefix_trick_is_rejected() {
+        if let Some(home) = dirs::home_dir() {
+            let action = ResolvedAction::CreateFolder {
+                path: format!("{}-evil/tmp", home.display()),
+            };
+            let err = validate_action(&action).unwrap_err();
+            assert!(matches!(err, AppError::ValidationError(_)));
+        }
+    }
+
+    #[test]
     fn out_of_range_route_index_is_rejected() {
         use crate::models::{ApprovalStatus, CommandKind, ResolvedRoute, RiskLevel};
         let cmd = ParsedCommand {
@@ -181,6 +240,7 @@ mod tests {
             risk: RiskLevel::R1,
             requires_approval: true,
             approval_status: ApprovalStatus::Approved,
+            unresolved_code: None,
             unresolved_message: None,
         };
         let err = validate(&cmd, 99).unwrap_err();

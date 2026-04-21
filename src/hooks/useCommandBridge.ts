@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import type {
   ExecutionResult,
+  AppConfig,
   HistoryEntry,
   MachineInfo,
   ParsedCommand,
@@ -116,6 +117,14 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     }
   }, []);
 
+  const getAppConfig = useCallback(async (): Promise<AppConfig | null> => {
+    try {
+      return await invoke<AppConfig>('get_app_config');
+    } catch {
+      return null;
+    }
+  }, []);
+
   const setWindowMode = useCallback(
     async (mode: 'lounge' | 'expanded'): Promise<void> => {
       try {
@@ -176,6 +185,7 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     getPermissionStatus,
     getHistory,
     getServiceCatalog,
+    getAppConfig,
     setWindowMode,
     toggleAlwaysOnTop,
     getProviderKeyStatus,

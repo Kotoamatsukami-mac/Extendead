@@ -22,8 +22,23 @@ fn new_event(command_id: &str, kind: ExecutionEventKind, message: String) -> Exe
     }
 }
 
-fn emit<R: Runtime>(app: &AppHandle<R>, event: ExecutionEvent) {
-    let _ = app.emit(EXECUTION_EVENT_NAME, ExecutionEventPayload { event });
+fn emit<R: Runtime>(
+    app: &AppHandle<R>,
+    timeline: &mut Vec<ExecutionEvent>,
+    event: ExecutionEvent,
+) {
+    let _ = app.emit(
+        EXECUTION_EVENT_NAME,
+        ExecutionEventPayload {
+            event: event.clone(),
+        },
+    );
+    timeline.push(event);
+}
+
+pub struct ExecutionRun {
+    pub result: ExecutionResult,
+    pub events: Vec<ExecutionEvent>,
 }
 
 fn outcome_for_error(e: &AppError) -> ExecutionOutcome {
@@ -50,8 +65,9 @@ pub fn execute<R: Runtime>(
     command: &ParsedCommand,
     route_index: usize,
     app: &AppHandle<R>,
-) -> Result<ExecutionResult, AppError> {
+) -> Result<ExecutionRun, AppError> {
     let start = Instant::now();
+    let mut timeline = Vec::new();
 
     validator::validate(command, route_index)?;
 
@@ -67,6 +83,7 @@ pub fn execute<R: Runtime>(
 
     emit(
         app,
+        &mut timeline,
         new_event(
             command_id,
             ExecutionEventKind::Started,
@@ -74,7 +91,7 @@ pub fn execute<R: Runtime>(
         ),
     );
 
-    let result = dispatch_action(command_id, &route.action, app);
+    let result = dispatch_action(command_id, &route.action, app, &mut timeline);
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -91,15 +108,19 @@ pub fn execute<R: Runtime>(
 
             emit(
                 app,
+                &mut timeline,
                 new_event(command_id, ExecutionEventKind::Completed, message.clone()),
             );
-            Ok(ExecutionResult {
-                command_id: command_id.to_string(),
-                outcome: ExecutionOutcome::Success,
-                message,
-                human_message: format!("✓ {}", route.label),
-                duration_ms,
-                inverse_action: inverse,
+            Ok(ExecutionRun {
+                result: ExecutionResult {
+                    command_id: command_id.to_string(),
+                    outcome: ExecutionOutcome::Success,
+                    message,
+                    human_message: format!("✓ {}", route.label),
+                    duration_ms,
+                    inverse_action: inverse,
+                },
+                events: timeline,
             })
         }
         Err(e) => {
@@ -108,15 +129,19 @@ pub fn execute<R: Runtime>(
             let msg = e.to_string();
             emit(
                 app,
+                &mut timeline,
                 new_event(command_id, ExecutionEventKind::Failed, msg.clone()),
             );
-            Ok(ExecutionResult {
-                command_id: command_id.to_string(),
-                outcome,
-                message: msg,
-                human_message,
-                duration_ms,
-                inverse_action: None,
+            Ok(ExecutionRun {
+                result: ExecutionResult {
+                    command_id: command_id.to_string(),
+                    outcome,
+                    message: msg,
+                    human_message,
+                    duration_ms,
+                    inverse_action: None,
+                },
+                events: timeline,
             })
         }
     }
@@ -126,6 +151,7 @@ fn dispatch_action<R: Runtime>(
     command_id: &str,
     action: &ResolvedAction,
     app: &AppHandle<R>,
+    timeline: &mut Vec<ExecutionEvent>,
 ) -> Result<String, AppError> {
     match action {
         ResolvedAction::OpenUrl {
@@ -135,6 +161,7 @@ fn dispatch_action<R: Runtime>(
         } => {
             emit(
                 app,
+                timeline,
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
@@ -149,6 +176,7 @@ fn dispatch_action<R: Runtime>(
         } => {
             emit(
                 app,
+                timeline,
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
@@ -163,6 +191,7 @@ fn dispatch_action<R: Runtime>(
         } => {
             emit(
                 app,
+                timeline,
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
@@ -183,6 +212,7 @@ fn dispatch_action<R: Runtime>(
             };
             emit(
                 app,
+                timeline,
                 new_event(command_id, ExecutionEventKind::Progress, progress_msg),
             );
             applescript::run_validated_script(script).map(|_| match template_id.as_str() {
@@ -195,6 +225,7 @@ fn dispatch_action<R: Runtime>(
         ResolvedAction::OpenSystemPreferences { pane_url } => {
             emit(
                 app,
+                timeline,
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
@@ -206,6 +237,7 @@ fn dispatch_action<R: Runtime>(
         ResolvedAction::OpenPath { path } => {
             emit(
                 app,
+                timeline,
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
@@ -217,6 +249,7 @@ fn dispatch_action<R: Runtime>(
         ResolvedAction::CreateFolder { path } => {
             emit(
                 app,
+                timeline,
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,
@@ -231,6 +264,7 @@ fn dispatch_action<R: Runtime>(
         } => {
             emit(
                 app,
+                timeline,
                 new_event(
                     command_id,
                     ExecutionEventKind::Progress,

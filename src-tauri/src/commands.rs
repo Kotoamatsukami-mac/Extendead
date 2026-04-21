@@ -6,8 +6,49 @@ use crate::models::{
     HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
 };
 use crate::provider_keys::ProviderKeyStatus;
-use crate::{executor, history, machine, parser, permissions, provider_keys, resolver, risk};
+use crate::{
+    arbiter, executor, history, interpret_local, machine, parser, permissions, provider_keys,
+    resolver, risk,
+};
 use crate::{service_catalog, AppState, APP_CONFIG_MAX_HISTORY};
+
+fn interpreted_intent(input: &str) -> Option<parser::Intent> {
+    let candidates = interpret_local::interpret(input);
+    let arbitration = arbiter::decide(&candidates);
+    if arbitration.decision != arbiter::ArbitrationDecision::Execute {
+        return None;
+    }
+    let chosen = arbitration.chosen_index?;
+    let candidate = candidates.get(chosen)?;
+    intent_from_candidate(candidate)
+}
+
+fn intent_from_candidate(candidate: &arbiter::CandidateIntent) -> Option<parser::Intent> {
+    let action = candidate.canonical_action.trim();
+
+    if let Some(app) = action.strip_prefix("open_app:") {
+        let app = app.trim();
+        if !app.is_empty() {
+            return Some(parser::Intent::OpenAppNamed(app.to_string()));
+        }
+    }
+
+    if let Some(app) = action.strip_prefix("quit_app:") {
+        let app = app.trim();
+        if !app.is_empty() {
+            return Some(parser::Intent::CloseAppNamed(app.to_string()));
+        }
+    }
+
+    if let Some(path) = action.strip_prefix("open_path:") {
+        let path = path.trim();
+        if !path.is_empty() {
+            return Some(parser::Intent::OpenPath(path.to_string()));
+        }
+    }
+
+    None
+}
 
 // ── parse_command ─────────────────────────────────────────────────────────────
 
@@ -17,7 +58,7 @@ pub async fn parse_command(
     state: tauri::State<'_, AppState>,
 ) -> Result<ParsedCommand, String> {
     let normalized = parser::normalize(&input);
-    let intent = parser::parse_intent(&input);
+    let intent = interpreted_intent(&input).unwrap_or_else(|| parser::parse_intent(&input));
 
     let machine_info = {
         let inner = state.inner.lock().map_err(|_| "state lock error")?;
@@ -35,7 +76,8 @@ pub async fn parse_command(
             })
     };
 
-    let (kind, routes, unresolved_code, unresolved_message) = resolver::resolve(&intent, &machine_info);
+    let (kind, routes, unresolved_code, unresolved_message) =
+        resolver::resolve(&intent, &machine_info);
 
     let cmd = ParsedCommand {
         id: uuid::Uuid::new_v4().to_string(),
@@ -89,14 +131,15 @@ pub async fn execute_command(
         ApprovalStatus::Denied => return Err("command was denied".to_string()),
     }
 
-    let result = executor::execute(&command, route_index, &app).map_err(|e| e.to_string())?;
+    let run = executor::execute(&command, route_index, &app).map_err(|e| e.to_string())?;
+    let result = run.result;
 
     // Build history entry.
     let inverse = result.inverse_action.clone();
     let entry = HistoryEntry {
         command: command.clone(),
         outcome: result.outcome.clone(),
-        execution_events: vec![],
+        execution_events: run.events,
         duration_ms: result.duration_ms,
         inverse_action: inverse,
         timestamp: Utc::now().to_rfc3339(),
@@ -161,6 +204,13 @@ pub async fn get_permission_status() -> Result<PermissionStatus, String> {
     Ok(permissions::get_permission_status())
 }
 
+// ── get_app_config ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_app_config() -> Result<crate::config::AppConfig, String> {
+    Ok(crate::config::load_config())
+}
+
 // ── get_history ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -213,7 +263,8 @@ pub async fn undo_last(
         unresolved_message: None,
     };
 
-    let result = executor::execute(&undo_cmd, 0, &app).map_err(|e| e.to_string())?;
+    let run = executor::execute(&undo_cmd, 0, &app).map_err(|e| e.to_string())?;
+    let result = run.result;
 
     if result.outcome == ExecutionOutcome::Success {
         let mut inner = state.inner.lock().map_err(|_| "state lock error")?;
