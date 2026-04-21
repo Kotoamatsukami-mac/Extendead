@@ -70,6 +70,17 @@ pub static ACTIONS: &[ActionDefinition] = &[
         risk_baseline: RiskLevel::R2,
         reversible: true,
     },
+    ActionDefinition {
+        family: IntentFamily::ServiceOpen,
+        canonical_action: CanonicalAction::OpenService,
+        surface_synonyms: &["open", "watch", "browse", "visit"],
+        required_slots: &["service"],
+        optional_slots: &["browser"],
+        clarification_prompts: &["Which service should I open?", "Which browser should I use?"],
+        executor_family: ExecutorFamily::Browser,
+        risk_baseline: RiskLevel::R1,
+        reversible: false,
+    },
 ];
 
 pub fn all_actions() -> &'static [ActionDefinition] {
