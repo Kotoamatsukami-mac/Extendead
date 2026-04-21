@@ -13,6 +13,7 @@ import type {
   ParsedCommand,
   ProviderKeyStatus,
   ResultFeedback,
+  ServiceDefinition,
 } from './types/commands';
 import type { ExecutionEvent } from './types/events';
 
@@ -51,6 +52,7 @@ export function App() {
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [serviceCatalog, setServiceCatalog] = useState<ServiceDefinition[]>([]);
   const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
   const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
   const [developerBusy, setDeveloperBusy] = useState(false);
@@ -159,6 +161,7 @@ export function App() {
 
   useEffect(() => {
     bridge.getHistory().then(setHistory);
+    bridge.getServiceCatalog().then(setServiceCatalog);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -179,8 +182,8 @@ export function App() {
   );
 
   const suggestions = useMemo(
-    () => getCommandSuggestions(inputValue, machineInfo),
-    [inputValue, machineInfo],
+    () => getCommandSuggestions(inputValue, machineInfo, serviceCatalog),
+    [inputValue, machineInfo, serviceCatalog],
   );
 
   const refreshDeveloperStatus = useCallback(async () => {
@@ -429,13 +432,18 @@ function getPrediction(inputValue: string, history: HistoryEntry[]): string {
   return '';
 }
 
-function getCommandSuggestions(inputValue: string, machineInfo: MachineInfo | null): CommandSuggestion[] {
+function getCommandSuggestions(
+  inputValue: string,
+  machineInfo: MachineInfo | null,
+  serviceCatalog: ServiceDefinition[],
+): CommandSuggestion[] {
   const normalized = normalizePhrase(inputValue);
   if (normalized.length < 2) return [];
 
   const commands: CommandSuggestion[] = [];
   const appNames = getInstalledAppNames(machineInfo);
   const appQuery = getRemainderAfterPrefix(normalized, ['close ', 'quit ', 'exit ', 'open ', 'launch ', 'start ', 'run ']);
+  const serviceQuery = getServiceQuery(normalized);
   const titleCaseQuery = titleCase(appQuery);
 
   if (startsWithAny(normalized, ['close ', 'quit ', 'exit '])) {
@@ -469,6 +477,16 @@ function getCommandSuggestions(inputValue: string, machineInfo: MachineInfo | nu
         });
       }
     }
+  }
+
+  const matchingServices = filterServices(serviceCatalog, serviceQuery);
+  for (const service of matchingServices) {
+    commands.push({
+      id: `service-${service.id}`,
+      family: 'open service',
+      canonical: `open ${service.display_name.toLowerCase()}`,
+      detail: `open ${service.display_name} in browser`,
+    });
   }
 
   if (startsWithAny(normalized, ['create folder', 'make folder', 'new folder'])) {
@@ -537,6 +555,36 @@ function filterAppNames(appNames: string[], query: string): string[] {
   return appNames
     .filter((app) => normalizePhrase(app).includes(normalizedQuery))
     .slice(0, 4);
+}
+
+function filterServices(serviceCatalog: ServiceDefinition[], query: string): ServiceDefinition[] {
+  const normalizedQuery = normalizePhrase(query);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  return serviceCatalog
+    .filter((service) => {
+      const display = normalizePhrase(service.display_name);
+      if (display.includes(normalizedQuery) || normalizedQuery.includes(display)) {
+        return true;
+      }
+      return service.aliases.some((alias) => {
+        const normalizedAlias = normalizePhrase(alias);
+        return normalizedAlias.includes(normalizedQuery) || normalizedQuery.includes(normalizedAlias);
+      });
+    })
+    .slice(0, 4);
+}
+
+function getServiceQuery(value: string): string {
+  const normalized = normalizePhrase(value);
+  for (const prefix of ['open ', 'watch ', 'browse ', 'visit ', 'go to ']) {
+    if (normalized.startsWith(prefix)) {
+      return normalized.slice(prefix.length).split(/\s+in\s+/i)[0]?.trim() ?? '';
+    }
+  }
+  return normalized.split(/\s+in\s+/i)[0]?.trim() ?? '';
 }
 
 function extractFolderName(raw: string): string {
