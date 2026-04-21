@@ -162,22 +162,19 @@ fn extract_volume_level(s: &str) -> Option<u8> {
 }
 
 fn extract_service_open_in_browser(raw: &str) -> Option<Intent> {
-    let trimmed = raw.trim();
-    let normalized = normalize(trimmed);
+    let normalized = normalize(raw);
 
     for prefix in ["open ", "watch ", "browse ", "visit "] {
         if let Some(rest) = normalized.strip_prefix(prefix) {
             let (service_query, browser_query) = rest.rsplit_once(" in ")?;
             let service = service_catalog::find_service_by_query(service_query.trim())?;
-            let browser = trimmed
-                .get(prefix.len() + service_query.len() + " in ".len()..)?
-                .trim();
+            let browser = clean_token(browser_query);
             if browser.is_empty() {
                 return None;
             }
             return Some(Intent::OpenServiceInBrowser {
                 service_id: service.id.to_string(),
-                browser: clean_token(browser),
+                browser,
             });
         }
     }
