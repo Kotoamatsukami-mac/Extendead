@@ -15,6 +15,17 @@ export type RiskLevel = 'R0' | 'R1' | 'R2' | 'R3';
 
 export type ApprovalStatus = 'not_required' | 'pending' | 'approved' | 'denied';
 
+export type UnresolvedCode =
+  | 'unsupported_command'
+  | 'unsupported_service'
+  | 'browser_not_installed'
+  | 'app_not_installed'
+  | 'path_not_found'
+  | 'base_path_unresolved'
+  | 'target_already_exists'
+  | 'destination_path_unresolved'
+  | 'destination_parent_missing';
+
 export type ExecutionOutcome =
   | 'success'
   | 'recoverable_failure'
@@ -93,6 +104,7 @@ export interface ParsedCommand {
   risk: RiskLevel;
   requires_approval: boolean;
   approval_status: ApprovalStatus;
+  unresolved_code?: UnresolvedCode | null;
   unresolved_message?: string | null;
 }
 
