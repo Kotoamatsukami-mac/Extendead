@@ -17,11 +17,25 @@ pub async fn debug_interpret_local(input: String) -> Result<String, String> {
             candidate.missing_slots.join(", ")
         };
 
+        let slots = if candidate.slots.is_empty() {
+            "none".to_string()
+        } else {
+            candidate
+                .slots
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
         lines.push(format!(
-            "candidate[{index}]: family={} action={} confidence={:.2} missing_slots={} clarify={}",
+            "candidate[{index}]: family={:?} action={:?} executor={:?} source={:?} confidence={:.2} slots={} missing_slots={} clarify={}",
             candidate.family,
             candidate.canonical_action,
+            candidate.executor_family,
+            candidate.source,
             candidate.confidence,
+            slots,
             missing,
             candidate.clarification_needed,
         ));
