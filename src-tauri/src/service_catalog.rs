@@ -156,8 +156,30 @@ pub fn service_by_id(id: &str) -> Option<&'static ServiceDefinition> {
 pub fn find_service_by_query(query: &str) -> Option<&'static ServiceDefinition> {
     let normalized = normalize(query);
     SERVICES.iter().find(|service| {
-        service.aliases.iter().any(|alias| normalize(alias) == normalized)
+        service
+            .aliases
+            .iter()
+            .any(|alias| normalize(alias) == normalized)
     })
+}
+
+pub fn search_services(query: &str, limit: usize) -> Vec<&'static ServiceDefinition> {
+    let normalized = normalize(query);
+    if normalized.is_empty() {
+        return vec![];
+    }
+
+    SERVICES
+        .iter()
+        .filter(|service| {
+            normalize(service.display_name).contains(&normalized)
+                || service
+                    .aliases
+                    .iter()
+                    .any(|alias| normalize(alias).contains(&normalized))
+        })
+        .take(limit)
+        .collect()
 }
 
 pub fn approved_service_hosts() -> Vec<String> {

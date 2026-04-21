@@ -33,12 +33,81 @@ pub fn interpret(input: &str) -> Vec<CandidateIntent> {
         }];
     }
 
+    if let Some((action, browser)) = extract_browser_tab_action(&normalized) {
+        let mut slots = BTreeMap::new();
+        if let Some(browser) = browser {
+            slots.insert("browser".to_string(), browser);
+        }
+
+        return vec![CandidateIntent {
+            family: IntentFamily::BrowserTab,
+            canonical_action: action,
+            slots,
+            missing_slots: vec![],
+            confidence: 0.90,
+            clarification_needed: false,
+            risk_baseline: RiskLevel::R1,
+            executor_family: ExecutorFamily::Browser,
+            source: InterpretationSource::LocalPattern,
+        }];
+    }
+
+    if is_brightness_up(&normalized) {
+        return vec![CandidateIntent {
+            family: IntentFamily::DisplayBrightness,
+            canonical_action: CanonicalAction::BrightnessUp,
+            slots: BTreeMap::new(),
+            missing_slots: vec![],
+            confidence: 0.92,
+            clarification_needed: false,
+            risk_baseline: RiskLevel::R1,
+            executor_family: ExecutorFamily::Settings,
+            source: InterpretationSource::LocalPattern,
+        }];
+    }
+
+    if is_brightness_down(&normalized) {
+        return vec![CandidateIntent {
+            family: IntentFamily::DisplayBrightness,
+            canonical_action: CanonicalAction::BrightnessDown,
+            slots: BTreeMap::new(),
+            missing_slots: vec![],
+            confidence: 0.92,
+            clarification_needed: false,
+            risk_baseline: RiskLevel::R1,
+            executor_family: ExecutorFamily::Settings,
+            source: InterpretationSource::LocalPattern,
+        }];
+    }
+
+    if let Some(path) = extract_trash_path(&normalized) {
+        return vec![CandidateIntent {
+            family: IntentFamily::PathTrash,
+            canonical_action: CanonicalAction::TrashPath,
+            slots: slot_map(Some(("path", path.as_str()))),
+            missing_slots: vec![],
+            confidence: 0.86,
+            clarification_needed: false,
+            risk_baseline: RiskLevel::R2,
+            executor_family: ExecutorFamily::Filesystem,
+            source: InterpretationSource::LocalPattern,
+        }];
+    }
+
     if let Some(app) = remainder_after(&normalized, &["close ", "quit ", "exit ", "shut "]) {
         return vec![CandidateIntent {
             family: IntentFamily::AppClose,
             canonical_action: CanonicalAction::QuitApp,
-            slots: slot_map(if app.is_empty() { None } else { Some(("app", app.as_str())) }),
-            missing_slots: if app.is_empty() { vec!["app".to_string()] } else { vec![] },
+            slots: slot_map(if app.is_empty() {
+                None
+            } else {
+                Some(("app", app.as_str()))
+            }),
+            missing_slots: if app.is_empty() {
+                vec!["app".to_string()]
+            } else {
+                vec![]
+            },
             confidence: if app.is_empty() { 0.55 } else { 0.92 },
             clarification_needed: app.is_empty(),
             risk_baseline: RiskLevel::R1,
@@ -51,13 +120,21 @@ pub fn interpret(input: &str) -> Vec<CandidateIntent> {
         let is_path = looks_like_path(&target);
         let slot_name = if is_path { "path" } else { "app" };
         return vec![CandidateIntent {
-            family: if is_path { IntentFamily::PathOpen } else { IntentFamily::AppOpen },
+            family: if is_path {
+                IntentFamily::PathOpen
+            } else {
+                IntentFamily::AppOpen
+            },
             canonical_action: if is_path {
                 CanonicalAction::OpenPath
             } else {
                 CanonicalAction::OpenApp
             },
-            slots: slot_map(if target.is_empty() { None } else { Some((slot_name, target.as_str())) }),
+            slots: slot_map(if target.is_empty() {
+                None
+            } else {
+                Some((slot_name, target.as_str()))
+            }),
             missing_slots: if target.is_empty() {
                 vec![slot_name.to_string()]
             } else {
@@ -82,7 +159,11 @@ pub fn interpret(input: &str) -> Vec<CandidateIntent> {
             family: action.family,
             canonical_action: action.canonical_action,
             slots: BTreeMap::new(),
-            missing_slots: action.required_slots.iter().map(|slot| slot.to_string()).collect(),
+            missing_slots: action
+                .required_slots
+                .iter()
+                .map(|slot| slot.to_string())
+                .collect(),
             confidence: 0.60,
             clarification_needed: !action.required_slots.is_empty(),
             risk_baseline: action.risk_baseline.clone(),
@@ -100,7 +181,8 @@ fn extract_service_open(normalized: &str) -> Option<(String, Option<String>)> {
     for prefix in ["open ", "watch ", "browse ", "visit ", "go to "] {
         if let Some(rest) = normalized.strip_prefix(prefix) {
             if let Some((service_query, browser_query)) = rest.rsplit_once(" in ") {
-                if let Some(service) = service_catalog::find_service_by_query(service_query.trim()) {
+                if let Some(service) = service_catalog::find_service_by_query(service_query.trim())
+                {
                     let browser = browser_query.trim();
                     if !browser.is_empty() {
                         return Some((service.id.to_string(), Some(browser.to_string())));
@@ -139,4 +221,84 @@ fn looks_like_path(value: &str) -> bool {
         || value.starts_with('/')
         || value.contains('/')
         || matches!(value, "desktop" | "downloads" | "documents" | "home")
+}
+
+fn extract_browser_tab_action(normalized: &str) -> Option<(CanonicalAction, Option<String>)> {
+    let patterns = [
+        ("open new tab", CanonicalAction::BrowserNewTab),
+        ("new tab", CanonicalAction::BrowserNewTab),
+        ("close tab", CanonicalAction::BrowserCloseTab),
+        ("reopen closed tab", CanonicalAction::BrowserReopenClosedTab),
+        ("reopen tab", CanonicalAction::BrowserReopenClosedTab),
+        ("undo close tab", CanonicalAction::BrowserReopenClosedTab),
+        ("restore tab", CanonicalAction::BrowserReopenClosedTab),
+    ];
+
+    for (prefix, action) in patterns {
+        if let Some(rest) = strip_phrase(normalized, prefix) {
+            if let Some(browser) = rest.strip_prefix("in ").map(str::trim) {
+                if !browser.is_empty() {
+                    return Some((action, Some(browser.to_string())));
+                }
+                return Some((action, None));
+            }
+            return Some((action, None));
+        }
+    }
+
+    None
+}
+
+fn strip_phrase<'a>(value: &'a str, phrase: &str) -> Option<&'a str> {
+    if value == phrase {
+        Some("")
+    } else {
+        value.strip_prefix(&format!("{phrase} "))
+    }
+}
+
+fn is_brightness_up(normalized: &str) -> bool {
+    matches!(
+        normalized,
+        "brightness up" | "increase brightness" | "raise brightness" | "brighter"
+    )
+}
+
+fn is_brightness_down(normalized: &str) -> bool {
+    matches!(
+        normalized,
+        "brightness down" | "decrease brightness" | "lower brightness" | "dim"
+    )
+}
+
+fn extract_trash_path(normalized: &str) -> Option<String> {
+    for prefix in ["trash ", "delete ", "remove "] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            let rest = rest.trim();
+            if rest.starts_with("permanently ")
+                || rest.starts_with("permanent ")
+                || rest.starts_with("forever ")
+            {
+                return None;
+            }
+            if looks_like_path(rest) {
+                return Some(rest.to_string());
+            }
+            return None;
+        }
+    }
+
+    if let Some(rest) = normalized.strip_prefix("move ") {
+        if let Some((source, destination)) = rest.split_once(" to ") {
+            let destination = destination.trim();
+            if matches!(destination, "trash" | "the trash" | "~/.trash") {
+                let source = source.trim();
+                if looks_like_path(source) {
+                    return Some(source.to_string());
+                }
+            }
+        }
+    }
+
+    None
 }

@@ -99,6 +99,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::parse_command,
+            commands::suggest_commands,
             commands::execute_command,
             commands::approve_command,
             commands::deny_command,

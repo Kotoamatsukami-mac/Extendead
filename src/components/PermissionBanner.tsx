@@ -39,8 +39,9 @@ export function PermissionBanner({ status }: PermissionBannerProps) {
         )}
         {eventsWarn && (
           <span className="permission-banner__item">
-            Apple Events: {stateLabel(status.apple_events)} — required for volume &amp; audio
-            commands. Grant in System Settings → Privacy & Security → Automation.
+            Apple Events: {stateLabel(status.apple_events)} — required for browser tab,
+            brightness, and audio commands. Grant in System Settings → Privacy & Security →
+            Automation.
           </span>
         )}
       </div>

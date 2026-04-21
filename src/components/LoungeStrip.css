@@ -17,6 +17,7 @@
     border-color 0.25s ease,
     box-shadow 0.25s ease;
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .lounge-strip::before {
@@ -86,27 +87,8 @@
   display: none;
 }
 
-.lounge-strip--embedded .lounge-strip__drag,
 .lounge-strip--embedded .lounge-strip__body {
   background: transparent;
-}
-
-.lounge-strip__drag {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 100%;
-  flex-shrink: 0;
-  cursor: grab;
-  position: relative;
-  z-index: 1;
-  background: var(--glass-bg);
-  border-radius: var(--strip-radius) 0 0 var(--strip-radius);
-}
-
-.lounge-strip__drag:active {
-  cursor: grabbing;
 }
 
 .lounge-strip__marker {
@@ -114,6 +96,7 @@
   height: 7px;
   border-radius: 999px;
   flex-shrink: 0;
+  margin-left: 16px;
   background: rgba(255, 255, 255, 0.22);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
   transition:
@@ -150,10 +133,10 @@
   align-items: center;
   flex: 1;
   height: 100%;
-  padding: 0 16px 0 0;
+  padding: 0 14px 0 0;
   gap: 10px;
   background: var(--glass-bg);
-  border-radius: 0 var(--strip-radius) var(--strip-radius) 0;
+  border-radius: var(--strip-radius);
   position: relative;
   z-index: 1;
   min-width: 0;
@@ -166,6 +149,7 @@
   height: 100%;
   display: flex;
   align-items: center;
+  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__ghost {
@@ -208,6 +192,7 @@
   letter-spacing: 0.02em;
   padding: 0;
   line-height: var(--strip-height);
+  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__input::placeholder {
@@ -252,14 +237,15 @@
   right: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
-  border-radius: 16px;
+  gap: 0;
+  padding: 6px 0;
+  border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(10, 10, 14, 0.92);
   backdrop-filter: blur(14px);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
   z-index: 6;
+  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__suggestion {
@@ -268,21 +254,25 @@
   gap: 10px;
   align-items: center;
   width: 100%;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 12px;
-  padding: 9px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+  padding: 9px 12px;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  transition: background 0.15s ease, color 0.15s ease;
+  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__suggestion:hover,
 .lounge-strip__suggestion--active {
-  background: rgba(140, 100, 220, 0.08);
-  border-color: rgba(140, 100, 220, 0.18);
-  transform: translateY(-1px);
+  background: rgba(140, 100, 220, 0.10);
+}
+
+.lounge-strip__suggestion:last-child {
+  border-bottom: none;
 }
 
 .lounge-strip__suggestion-family {
@@ -315,6 +305,24 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+.lounge-strip__pin-state {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.lounge-strip__pin-state--active {
+  color: rgba(140, 100, 220, 0.92);
+  border-color: rgba(140, 100, 220, 0.45);
+  background: rgba(140, 100, 220, 0.13);
 }
 
 .lounge-strip__hint {
@@ -345,6 +353,7 @@
   transition:
     color 0.2s ease,
     background 0.2s ease;
+  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__action-btn:hover {
@@ -358,18 +367,23 @@
 }
 
 .lounge-strip__pin {
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   cursor: pointer;
-  font-size: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.25);
-  padding: 5px;
+  padding: 6px 8px;
   flex-shrink: 0;
   line-height: 1;
-  border-radius: 8px;
+  border-radius: 999px;
   transition:
     color 0.2s ease,
-    background 0.2s ease;
+    background 0.2s ease,
+    border-color 0.2s ease;
+  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__pin:hover {
@@ -378,7 +392,9 @@
 }
 
 .lounge-strip__pin--active {
-  color: rgba(140, 100, 220, 0.6);
+  color: rgba(140, 100, 220, 0.9);
+  border-color: rgba(140, 100, 220, 0.5);
+  background: rgba(140, 100, 220, 0.15);
 }
 
 .lounge-strip__pin--active:hover {

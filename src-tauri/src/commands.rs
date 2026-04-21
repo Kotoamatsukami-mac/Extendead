@@ -3,8 +3,8 @@ use tauri::{AppHandle, Emitter};
 
 use crate::intent_language::{CandidateIntent, CanonicalAction};
 use crate::models::{
-    ApprovalStatus, ExecutionEvent, ExecutionEventKind, ExecutionOutcome, ExecutionResult,
-    HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
+    ApprovalStatus, CommandSuggestion, ExecutionEvent, ExecutionEventKind, ExecutionOutcome,
+    ExecutionResult, HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
 };
 use crate::provider_keys::ProviderKeyStatus;
 use crate::{
@@ -24,6 +24,34 @@ fn interpreted_intent(input: &str) -> Option<parser::Intent> {
     intent_from_candidate(candidate)
 }
 
+fn interpretation_clarification_message(input: &str) -> Option<String> {
+    let candidates = interpret_local::interpret(input);
+    let arbitration = arbiter::decide(&candidates);
+
+    match arbitration.decision {
+        arbiter::ArbitrationDecision::Clarify => {
+            let chosen = arbitration.chosen_index?;
+            let candidate = candidates.get(chosen)?;
+            if !candidate.missing_slots.is_empty() {
+                return Some(format!(
+                    "Need more detail: {}.",
+                    candidate
+                        .missing_slots
+                        .iter()
+                        .map(|slot| slot.replace('_', " "))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            Some(arbitration.explanation)
+        }
+        arbiter::ArbitrationDecision::OfferChoices => {
+            Some("Multiple actions look plausible. Add a bit more detail.".to_string())
+        }
+        _ => None,
+    }
+}
+
 fn intent_from_candidate(candidate: &CandidateIntent) -> Option<parser::Intent> {
     let slot = |name: &str| {
         candidate
@@ -34,11 +62,15 @@ fn intent_from_candidate(candidate: &CandidateIntent) -> Option<parser::Intent> 
     };
 
     match candidate.canonical_action {
-        CanonicalAction::OpenApp => slot("app").map(|app| parser::Intent::OpenAppNamed(app.to_string())),
+        CanonicalAction::OpenApp => {
+            slot("app").map(|app| parser::Intent::OpenAppNamed(app.to_string()))
+        }
         CanonicalAction::QuitApp => {
             slot("app").map(|app| parser::Intent::CloseAppNamed(app.to_string()))
         }
-        CanonicalAction::OpenPath => slot("path").map(|path| parser::Intent::OpenPath(path.to_string())),
+        CanonicalAction::OpenPath => {
+            slot("path").map(|path| parser::Intent::OpenPath(path.to_string()))
+        }
         CanonicalAction::OpenService => {
             let service = slot("service")?;
             match slot("browser") {
@@ -51,7 +83,9 @@ fn intent_from_candidate(candidate: &CandidateIntent) -> Option<parser::Intent> 
         }
         CanonicalAction::CreateFolder => {
             let name = slot("name")?;
-            let base = slot("base").or_else(|| slot("base_path")).map(|value| value.to_string());
+            let base = slot("base")
+                .or_else(|| slot("base_path"))
+                .map(|value| value.to_string());
             Some(parser::Intent::CreateFolder {
                 name: name.to_string(),
                 base,
@@ -65,8 +99,379 @@ fn intent_from_candidate(candidate: &CandidateIntent) -> Option<parser::Intent> 
                 destination: destination.to_string(),
             })
         }
+        CanonicalAction::BrowserNewTab => Some(parser::Intent::BrowserNewTab {
+            browser: slot("browser").map(|browser| browser.to_string()),
+        }),
+        CanonicalAction::BrowserCloseTab => Some(parser::Intent::BrowserCloseTab {
+            browser: slot("browser").map(|browser| browser.to_string()),
+        }),
+        CanonicalAction::BrowserReopenClosedTab => Some(parser::Intent::BrowserReopenClosedTab {
+            browser: slot("browser").map(|browser| browser.to_string()),
+        }),
+        CanonicalAction::BrightnessUp => Some(parser::Intent::IncreaseBrightness),
+        CanonicalAction::BrightnessDown => Some(parser::Intent::DecreaseBrightness),
+        CanonicalAction::TrashPath => {
+            slot("path").map(|path| parser::Intent::TrashPath(path.to_string()))
+        }
         CanonicalAction::Unknown => None,
     }
+}
+
+fn machine_snapshot(state: &tauri::State<'_, AppState>) -> Result<MachineInfo, String> {
+    let inner = state.inner.lock().map_err(|_| "state lock error")?;
+    Ok(inner
+        .machine_info
+        .clone()
+        .unwrap_or_else(|| crate::models::MachineInfo {
+            hostname: String::new(),
+            username: String::new(),
+            os_version: String::new(),
+            architecture: String::new(),
+            installed_browsers: vec![],
+            installed_apps: vec![],
+            home_dir: String::new(),
+        }))
+}
+
+fn intent_key(intent: &parser::Intent) -> String {
+    match intent {
+        parser::Intent::OpenService(service_id) => format!("open_service:{service_id}"),
+        parser::Intent::OpenServiceInBrowser {
+            service_id,
+            browser,
+        } => {
+            format!(
+                "open_service_in_browser:{service_id}:{}",
+                parser::normalize(browser)
+            )
+        }
+        parser::Intent::OpenAppNamed(app) => format!("open_app:{}", parser::normalize(app)),
+        parser::Intent::CloseAppNamed(app) => format!("close_app:{}", parser::normalize(app)),
+        parser::Intent::OpenPath(path) => format!("open_path:{}", parser::normalize(path)),
+        parser::Intent::CreateFolder { name, base } => {
+            format!(
+                "create_folder:{}:{}",
+                parser::normalize(name),
+                base.as_ref()
+                    .map(|b| parser::normalize(b))
+                    .unwrap_or_else(|| "home".to_string())
+            )
+        }
+        parser::Intent::MovePath {
+            source,
+            destination,
+        } => {
+            format!(
+                "move_path:{}:{}",
+                parser::normalize(source),
+                parser::normalize(destination)
+            )
+        }
+        parser::Intent::BrowserNewTab { browser } => format!(
+            "browser_new_tab:{}",
+            browser
+                .as_ref()
+                .map(|b| parser::normalize(b))
+                .unwrap_or_else(|| "default".to_string())
+        ),
+        parser::Intent::BrowserCloseTab { browser } => format!(
+            "browser_close_tab:{}",
+            browser
+                .as_ref()
+                .map(|b| parser::normalize(b))
+                .unwrap_or_else(|| "default".to_string())
+        ),
+        parser::Intent::BrowserReopenClosedTab { browser } => format!(
+            "browser_reopen_closed_tab:{}",
+            browser
+                .as_ref()
+                .map(|b| parser::normalize(b))
+                .unwrap_or_else(|| "default".to_string())
+        ),
+        parser::Intent::TrashPath(path) => format!("trash_path:{}", parser::normalize(path)),
+        parser::Intent::DeletePathPermanently(path) => {
+            format!("delete_permanent:{}", parser::normalize(path))
+        }
+        parser::Intent::OpenSafari => "open_safari".to_string(),
+        parser::Intent::OpenChrome => "open_chrome".to_string(),
+        parser::Intent::OpenFirefox => "open_firefox".to_string(),
+        parser::Intent::OpenBrave => "open_brave".to_string(),
+        parser::Intent::OpenArc => "open_arc".to_string(),
+        parser::Intent::OpenFinder => "open_finder".to_string(),
+        parser::Intent::OpenSlack => "open_slack".to_string(),
+        parser::Intent::MuteVolume => "mute_volume".to_string(),
+        parser::Intent::SetVolume(level) => format!("set_volume:{level}"),
+        parser::Intent::OpenDisplaySettings => "open_display_settings".to_string(),
+        parser::Intent::RevealDownloads => "reveal_downloads".to_string(),
+        parser::Intent::IncreaseBrightness => "brightness_up".to_string(),
+        parser::Intent::DecreaseBrightness => "brightness_down".to_string(),
+        parser::Intent::Unknown(raw) => format!("unknown:{}", parser::normalize(raw)),
+    }
+}
+
+fn intent_family_label(intent: &parser::Intent) -> &'static str {
+    match intent {
+        parser::Intent::OpenService(_) | parser::Intent::OpenServiceInBrowser { .. } => {
+            "open service"
+        }
+        parser::Intent::OpenAppNamed(_)
+        | parser::Intent::OpenSafari
+        | parser::Intent::OpenChrome
+        | parser::Intent::OpenFirefox
+        | parser::Intent::OpenBrave
+        | parser::Intent::OpenArc
+        | parser::Intent::OpenFinder
+        | parser::Intent::OpenSlack => "open app",
+        parser::Intent::CloseAppNamed(_) => "close app",
+        parser::Intent::BrowserNewTab { .. }
+        | parser::Intent::BrowserCloseTab { .. }
+        | parser::Intent::BrowserReopenClosedTab { .. } => "browser tab",
+        parser::Intent::OpenPath(_) | parser::Intent::RevealDownloads => "open path",
+        parser::Intent::CreateFolder { .. } => "create folder",
+        parser::Intent::MovePath { .. } => "move path",
+        parser::Intent::TrashPath(_) => "trash path",
+        parser::Intent::DeletePathPermanently(_) => "delete path",
+        parser::Intent::MuteVolume | parser::Intent::SetVolume(_) => "sound",
+        parser::Intent::IncreaseBrightness | parser::Intent::DecreaseBrightness => "brightness",
+        parser::Intent::OpenDisplaySettings => "settings",
+        parser::Intent::Unknown(_) => "unknown",
+    }
+}
+
+fn intent_canonical(intent: &parser::Intent) -> String {
+    match intent {
+        parser::Intent::OpenService(service_id) => service_catalog::service_by_id(service_id)
+            .map(|s| format!("open {}", s.display_name.to_lowercase()))
+            .unwrap_or_else(|| format!("open {service_id}")),
+        parser::Intent::OpenServiceInBrowser {
+            service_id,
+            browser,
+        } => {
+            let service = service_catalog::service_by_id(service_id)
+                .map(|s| s.display_name.to_lowercase())
+                .unwrap_or_else(|| service_id.to_string());
+            format!("open {service} in {}", parser::normalize(browser))
+        }
+        parser::Intent::OpenAppNamed(app) => format!("open {}", parser::normalize(app)),
+        parser::Intent::CloseAppNamed(app) => format!("close {}", parser::normalize(app)),
+        parser::Intent::OpenPath(path) => format!("open {path}"),
+        parser::Intent::CreateFolder { name, base } => match base {
+            Some(base) => format!("create folder called {name} in {base}"),
+            None => format!("create folder called {name} in home"),
+        },
+        parser::Intent::MovePath {
+            source,
+            destination,
+        } => {
+            format!("move {source} to {destination}")
+        }
+        parser::Intent::TrashPath(path) => format!("trash {path}"),
+        parser::Intent::DeletePathPermanently(path) => format!("delete permanently {path}"),
+        parser::Intent::BrowserNewTab { browser } => match browser {
+            Some(browser) => format!("open new tab in {}", parser::normalize(browser)),
+            None => "open new tab".to_string(),
+        },
+        parser::Intent::BrowserCloseTab { browser } => match browser {
+            Some(browser) => format!("close tab in {}", parser::normalize(browser)),
+            None => "close tab".to_string(),
+        },
+        parser::Intent::BrowserReopenClosedTab { browser } => match browser {
+            Some(browser) => format!("reopen closed tab in {}", parser::normalize(browser)),
+            None => "reopen closed tab".to_string(),
+        },
+        parser::Intent::IncreaseBrightness => "increase brightness".to_string(),
+        parser::Intent::DecreaseBrightness => "decrease brightness".to_string(),
+        parser::Intent::OpenSafari => "open safari".to_string(),
+        parser::Intent::OpenChrome => "open chrome".to_string(),
+        parser::Intent::OpenFirefox => "open firefox".to_string(),
+        parser::Intent::OpenBrave => "open brave".to_string(),
+        parser::Intent::OpenArc => "open arc".to_string(),
+        parser::Intent::OpenFinder => "open finder".to_string(),
+        parser::Intent::OpenSlack => "open slack".to_string(),
+        parser::Intent::MuteVolume => "mute".to_string(),
+        parser::Intent::SetVolume(level) => format!("set volume to {level}"),
+        parser::Intent::OpenDisplaySettings => "display settings".to_string(),
+        parser::Intent::RevealDownloads => "downloads".to_string(),
+        parser::Intent::Unknown(raw) => raw.to_string(),
+    }
+}
+
+fn push_intent_if_new(intents: &mut Vec<parser::Intent>, intent: parser::Intent) {
+    if matches!(intent, parser::Intent::Unknown(_)) {
+        return;
+    }
+    let key = intent_key(&intent);
+    if intents.iter().any(|existing| intent_key(existing) == key) {
+        return;
+    }
+    intents.push(intent);
+}
+
+fn path_like(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.starts_with("~/")
+        || trimmed.starts_with('/')
+        || trimmed.contains('/')
+        || matches!(
+            trimmed.to_lowercase().as_str(),
+            "desktop" | "downloads" | "documents" | "home"
+        )
+}
+
+fn suggestion_intents(input: &str, machine: &MachineInfo) -> Vec<parser::Intent> {
+    let mut intents = Vec::new();
+    let normalized = parser::normalize(input);
+    if normalized.len() < 2 {
+        return intents;
+    }
+
+    if let Some(intent) = interpreted_intent(input) {
+        push_intent_if_new(&mut intents, intent);
+    }
+
+    push_intent_if_new(&mut intents, parser::parse_intent(input));
+
+    if let Some(query) = normalized
+        .strip_prefix("open ")
+        .or_else(|| normalized.strip_prefix("launch "))
+        .or_else(|| normalized.strip_prefix("start "))
+        .or_else(|| normalized.strip_prefix("run "))
+    {
+        let query = query.trim();
+        if !query.is_empty() && !path_like(query) {
+            for app in &machine.installed_apps {
+                if parser::normalize(&app.name).contains(query) {
+                    push_intent_if_new(
+                        &mut intents,
+                        parser::Intent::OpenAppNamed(app.name.clone()),
+                    );
+                }
+            }
+            for browser in &machine.installed_browsers {
+                if parser::normalize(&browser.name).contains(query) {
+                    push_intent_if_new(
+                        &mut intents,
+                        parser::Intent::OpenAppNamed(browser.name.clone()),
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(query) = normalized
+        .strip_prefix("close ")
+        .or_else(|| normalized.strip_prefix("quit "))
+        .or_else(|| normalized.strip_prefix("exit "))
+    {
+        let query = query.trim();
+        if !query.is_empty() {
+            for app in &machine.installed_apps {
+                if parser::normalize(&app.name).contains(query) {
+                    push_intent_if_new(
+                        &mut intents,
+                        parser::Intent::CloseAppNamed(app.name.clone()),
+                    );
+                }
+            }
+            for browser in &machine.installed_browsers {
+                if parser::normalize(&browser.name).contains(query) {
+                    push_intent_if_new(
+                        &mut intents,
+                        parser::Intent::CloseAppNamed(browser.name.clone()),
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(query) = normalized
+        .strip_prefix("open ")
+        .or_else(|| normalized.strip_prefix("watch "))
+        .or_else(|| normalized.strip_prefix("browse "))
+        .or_else(|| normalized.strip_prefix("visit "))
+        .or_else(|| normalized.strip_prefix("go to "))
+    {
+        let query = query.split(" in ").next().unwrap_or("").trim();
+        if !query.is_empty() {
+            for service in service_catalog::search_services(query, 4) {
+                push_intent_if_new(
+                    &mut intents,
+                    parser::Intent::OpenService(service.id.to_string()),
+                );
+            }
+        }
+    }
+
+    intents
+}
+
+// ── suggest_commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn suggest_commands(
+    input: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<CommandSuggestion>, String> {
+    let machine_info = machine_snapshot(&state)?;
+    let intents = suggestion_intents(&input, &machine_info);
+    let mut suggestions = Vec::new();
+
+    for intent in intents {
+        let (kind, routes, unresolved_code, _unresolved_message) =
+            resolver::resolve(&intent, &machine_info);
+        if unresolved_code.is_some() || routes.is_empty() {
+            continue;
+        }
+
+        let valid_routes: Vec<_> = routes
+            .into_iter()
+            .filter(|route| crate::validator::validate_action(&route.action).is_ok())
+            .collect();
+        if valid_routes.is_empty() {
+            continue;
+        }
+
+        let annotated = risk::annotate(ParsedCommand {
+            id: "suggestion".to_string(),
+            raw_input: intent_canonical(&intent),
+            normalized: parser::normalize(&input),
+            kind,
+            routes: valid_routes.clone(),
+            risk: crate::models::RiskLevel::R0,
+            requires_approval: false,
+            approval_status: ApprovalStatus::NotRequired,
+            unresolved_code: None,
+            unresolved_message: None,
+        });
+
+        let detail = if annotated.requires_approval {
+            format!("{} (requires approval)", valid_routes[0].description)
+        } else {
+            valid_routes[0].description.clone()
+        };
+        let canonical = intent_canonical(&intent);
+        let id = format!(
+            "{}-{}",
+            intent_family_label(&intent).replace(' ', "-"),
+            canonical
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+                .collect::<String>()
+                .to_lowercase()
+        );
+        suggestions.push(CommandSuggestion {
+            id,
+            family: intent_family_label(&intent).to_string(),
+            canonical,
+            detail,
+        });
+
+        if suggestions.len() >= 4 {
+            break;
+        }
+    }
+
+    Ok(suggestions)
 }
 
 // ── parse_command ─────────────────────────────────────────────────────────────
@@ -77,28 +482,15 @@ pub async fn parse_command(
     state: tauri::State<'_, AppState>,
 ) -> Result<ParsedCommand, String> {
     let normalized = parser::normalize(&input);
-    let intent = interpreted_intent(&input).unwrap_or_else(|| parser::parse_intent(&input));
+    let parsed_intent = parser::parse_intent(&input);
+    let intent = interpreted_intent(&input).unwrap_or_else(|| parsed_intent.clone());
 
-    let machine_info = {
-        let inner = state.inner.lock().map_err(|_| "state lock error")?;
-        inner
-            .machine_info
-            .clone()
-            .unwrap_or_else(|| crate::models::MachineInfo {
-                hostname: String::new(),
-                username: String::new(),
-                os_version: String::new(),
-                architecture: String::new(),
-                installed_browsers: vec![],
-                installed_apps: vec![],
-                home_dir: String::new(),
-            })
-    };
+    let machine_info = machine_snapshot(&state)?;
 
     let (kind, routes, unresolved_code, unresolved_message) =
         resolver::resolve(&intent, &machine_info);
 
-    let cmd = ParsedCommand {
+    let mut cmd = ParsedCommand {
         id: uuid::Uuid::new_v4().to_string(),
         raw_input: input,
         normalized,
@@ -110,6 +502,12 @@ pub async fn parse_command(
         unresolved_code,
         unresolved_message,
     };
+
+    if cmd.routes.is_empty() && matches!(parsed_intent, parser::Intent::Unknown(_)) {
+        if let Some(clarify) = interpretation_clarification_message(&cmd.raw_input) {
+            cmd.unresolved_message = Some(clarify);
+        }
+    }
 
     let cmd = risk::annotate(cmd);
 
@@ -446,5 +844,28 @@ mod tests {
     fn returns_none_when_required_slots_missing() {
         let c = candidate(CanonicalAction::MovePath, &[("source", "~/Desktop/a.txt")]);
         assert_eq!(intent_from_candidate(&c), None);
+    }
+
+    #[test]
+    fn maps_browser_new_tab_candidate_with_browser_slot() {
+        let c = candidate(CanonicalAction::BrowserNewTab, &[("browser", "safari")]);
+        assert_eq!(
+            intent_from_candidate(&c),
+            Some(parser::Intent::BrowserNewTab {
+                browser: Some("safari".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn maps_trash_path_candidate() {
+        let c = candidate(
+            CanonicalAction::TrashPath,
+            &[("path", "~/Desktop/test.txt")],
+        );
+        assert_eq!(
+            intent_from_candidate(&c),
+            Some(parser::Intent::TrashPath("~/Desktop/test.txt".to_string()))
+        );
     }
 }

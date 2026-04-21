@@ -10,25 +10,23 @@ pub enum Intent {
     OpenFinder,
     OpenSlack,
     OpenService(String),
-    OpenServiceInBrowser {
-        service_id: String,
-        browser: String,
-    },
+    OpenServiceInBrowser { service_id: String, browser: String },
+    BrowserNewTab { browser: Option<String> },
+    BrowserCloseTab { browser: Option<String> },
+    BrowserReopenClosedTab { browser: Option<String> },
     CloseAppNamed(String),
     OpenAppNamed(String),
     OpenPath(String),
-    CreateFolder {
-        name: String,
-        base: Option<String>,
-    },
-    MovePath {
-        source: String,
-        destination: String,
-    },
+    CreateFolder { name: String, base: Option<String> },
+    MovePath { source: String, destination: String },
     MuteVolume,
     SetVolume(u8),
     OpenDisplaySettings,
     RevealDownloads,
+    IncreaseBrightness,
+    DecreaseBrightness,
+    TrashPath(String),
+    DeletePathPermanently(String),
     Unknown(String),
 }
 
@@ -67,6 +65,30 @@ pub fn parse_intent(raw: &str) -> Intent {
         ],
     ) {
         return Intent::RevealDownloads;
+    }
+
+    if matches_any(
+        s,
+        &[
+            "brightness up",
+            "increase brightness",
+            "raise brightness",
+            "brighter",
+        ],
+    ) {
+        return Intent::IncreaseBrightness;
+    }
+
+    if matches_any(
+        s,
+        &[
+            "brightness down",
+            "decrease brightness",
+            "lower brightness",
+            "dim",
+        ],
+    ) {
+        return Intent::DecreaseBrightness;
     }
 
     if matches_any(s, &["open finder", "finder"]) {
@@ -108,8 +130,16 @@ pub fn parse_intent(raw: &str) -> Intent {
         return intent;
     }
 
+    if let Some(intent) = extract_browser_tab_intent(raw) {
+        return intent;
+    }
+
     if let Some(service_id) = extract_service_open(raw) {
         return Intent::OpenService(service_id);
+    }
+
+    if let Some(intent) = extract_trash_path(raw) {
+        return intent;
     }
 
     if let Some(intent) = extract_move_path(raw) {
@@ -315,12 +345,123 @@ fn extract_move_path(raw: &str) -> Option<Intent> {
                 let source = clean_token(rest.get(..idx)?.trim());
                 let destination = clean_token(rest.get(idx + marker.len()..)?.trim());
                 if !source.is_empty() && !destination.is_empty() {
-                    return Some(Intent::MovePath { source, destination });
+                    return Some(Intent::MovePath {
+                        source,
+                        destination,
+                    });
                 }
             }
         }
     }
     None
+}
+
+fn extract_browser_tab_intent(raw: &str) -> Option<Intent> {
+    let normalized = normalize(raw);
+
+    let patterns = [
+        ("open new tab", Intent::BrowserNewTab { browser: None }),
+        ("new tab", Intent::BrowserNewTab { browser: None }),
+        ("close tab", Intent::BrowserCloseTab { browser: None }),
+        (
+            "reopen closed tab",
+            Intent::BrowserReopenClosedTab { browser: None },
+        ),
+        (
+            "reopen tab",
+            Intent::BrowserReopenClosedTab { browser: None },
+        ),
+        (
+            "undo close tab",
+            Intent::BrowserReopenClosedTab { browser: None },
+        ),
+        (
+            "restore tab",
+            Intent::BrowserReopenClosedTab { browser: None },
+        ),
+    ];
+
+    for (prefix, base_intent) in patterns {
+        if let Some(rest) = strip_phrase_suffix(&normalized, prefix) {
+            if let Some(browser_query) = rest.strip_prefix("in ") {
+                let browser = clean_token(browser_query);
+                if browser.is_empty() {
+                    return Some(base_intent.clone());
+                }
+                return Some(match base_intent {
+                    Intent::BrowserNewTab { .. } => Intent::BrowserNewTab {
+                        browser: Some(browser),
+                    },
+                    Intent::BrowserCloseTab { .. } => Intent::BrowserCloseTab {
+                        browser: Some(browser),
+                    },
+                    Intent::BrowserReopenClosedTab { .. } => Intent::BrowserReopenClosedTab {
+                        browser: Some(browser),
+                    },
+                    _ => base_intent.clone(),
+                });
+            }
+            return Some(base_intent);
+        }
+    }
+
+    None
+}
+
+fn extract_trash_path(raw: &str) -> Option<Intent> {
+    let trimmed = raw.trim();
+    let lower = normalize(trimmed);
+
+    for prefix in ["trash ", "delete ", "remove "] {
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            let raw_rest = trimmed.get(prefix.len()..)?.trim();
+            let mut path_part = raw_rest.to_string();
+            let is_permanent = rest.contains("permanent") || rest.contains("forever");
+            if is_permanent {
+                let lowered_path = normalize(&path_part);
+                for marker in ["permanently ", "permanent ", "forever "] {
+                    if lowered_path.starts_with(marker) && path_part.len() >= marker.len() {
+                        path_part = path_part
+                            .get(marker.len()..)
+                            .unwrap_or("")
+                            .trim()
+                            .to_string();
+                        break;
+                    }
+                }
+            }
+            let clean = clean_token(&path_part);
+            if clean.is_empty() || !looks_like_path(&clean) {
+                return None;
+            }
+            return Some(if is_permanent {
+                Intent::DeletePathPermanently(clean)
+            } else {
+                Intent::TrashPath(clean)
+            });
+        }
+    }
+
+    if let Some(rest) = lower.strip_prefix("move ") {
+        if let Some(idx) = rest.find(" to ") {
+            let source = clean_token(trimmed.get("move ".len()..("move ".len() + idx))?.trim());
+            let destination = rest.get((idx + " to ".len())..)?.trim();
+            if matches!(destination, "trash" | "the trash" | "~/.trash") && looks_like_path(&source)
+            {
+                return Some(Intent::TrashPath(source));
+            }
+        }
+    }
+
+    None
+}
+
+fn strip_phrase_suffix<'a>(value: &'a str, phrase: &str) -> Option<&'a str> {
+    if value == phrase {
+        Some("")
+    } else {
+        value.strip_prefix(&format!("{phrase} "))
+    }
 }
 
 fn looks_like_path(value: &str) -> bool {
@@ -453,6 +594,45 @@ mod tests {
                 source: "~/Desktop/test.txt".to_string(),
                 destination: "~/Documents".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn test_parse_browser_tab_actions() {
+        assert_eq!(
+            parse_intent("new tab"),
+            Intent::BrowserNewTab { browser: None }
+        );
+        assert_eq!(
+            parse_intent("close tab in safari"),
+            Intent::BrowserCloseTab {
+                browser: Some("safari".to_string()),
+            }
+        );
+        assert_eq!(
+            parse_intent("reopen closed tab"),
+            Intent::BrowserReopenClosedTab { browser: None }
+        );
+    }
+
+    #[test]
+    fn test_parse_brightness_actions() {
+        assert_eq!(
+            parse_intent("increase brightness"),
+            Intent::IncreaseBrightness
+        );
+        assert_eq!(parse_intent("brightness down"), Intent::DecreaseBrightness);
+    }
+
+    #[test]
+    fn test_parse_trash_actions() {
+        assert_eq!(
+            parse_intent("trash ~/Desktop/test.txt"),
+            Intent::TrashPath("~/Desktop/test.txt".to_string())
+        );
+        assert_eq!(
+            parse_intent("delete permanently ~/Desktop/test.txt"),
+            Intent::DeletePathPermanently("~/Desktop/test.txt".to_string())
         );
     }
 }

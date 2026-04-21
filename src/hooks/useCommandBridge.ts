@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type {
   ExecutionResult,
   AppConfig,
+  CommandSuggestion,
   HistoryEntry,
   MachineInfo,
   ParsedCommand,
@@ -48,6 +49,14 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
       cbRef.current.onParsed(cmd);
     } catch (e) {
       cbRef.current.onParseError(String(e));
+    }
+  }, []);
+
+  const suggestCommands = useCallback(async (input: string): Promise<CommandSuggestion[]> => {
+    try {
+      return await invoke<CommandSuggestion[]>('suggest_commands', { input });
+    } catch {
+      return [];
     }
   }, []);
 
@@ -178,6 +187,7 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
 
   return {
     parseCommand,
+    suggestCommands,
     approveAndExecute,
     denyCommand,
     undoLast,

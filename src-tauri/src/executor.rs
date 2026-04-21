@@ -22,11 +22,7 @@ fn new_event(command_id: &str, kind: ExecutionEventKind, message: String) -> Exe
     }
 }
 
-fn emit<R: Runtime>(
-    app: &AppHandle<R>,
-    timeline: &mut Vec<ExecutionEvent>,
-    event: ExecutionEvent,
-) {
+fn emit<R: Runtime>(app: &AppHandle<R>, timeline: &mut Vec<ExecutionEvent>, event: ExecutionEvent) {
     let _ = app.emit(
         EXECUTION_EVENT_NAME,
         ExecutionEventPayload {
@@ -208,6 +204,11 @@ fn dispatch_action<R: Runtime>(
                 "mute_volume" => "Muting system audio output".to_string(),
                 "unmute_volume" => "Unmuting system audio output".to_string(),
                 "set_volume" => "Setting output volume".to_string(),
+                "browser_new_tab" => "Opening a new browser tab".to_string(),
+                "browser_close_tab" => "Closing browser tab".to_string(),
+                "browser_reopen_closed_tab" => "Reopening closed browser tab".to_string(),
+                "brightness_up" => "Increasing display brightness".to_string(),
+                "brightness_down" => "Decreasing display brightness".to_string(),
                 _ => "Running AppleScript".to_string(),
             };
             emit(
@@ -219,6 +220,11 @@ fn dispatch_action<R: Runtime>(
                 "mute_volume" => "System audio muted".to_string(),
                 "unmute_volume" => "System audio unmuted".to_string(),
                 "set_volume" => "Output volume set".to_string(),
+                "browser_new_tab" => "New tab opened".to_string(),
+                "browser_close_tab" => "Tab closed".to_string(),
+                "browser_reopen_closed_tab" => "Closed tab reopened".to_string(),
+                "brightness_up" => "Brightness increased".to_string(),
+                "brightness_down" => "Brightness decreased".to_string(),
                 _ => "Done".to_string(),
             })
         }
@@ -386,6 +392,14 @@ fn create_folder(path: &str) -> Result<String, AppError> {
 }
 
 fn move_path(source_path: &str, destination_path: &str) -> Result<String, AppError> {
+    if let Some(parent) = std::path::Path::new(destination_path).parent() {
+        if destination_path.contains("/.Trash/") {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                AppError::ExecutionError(format!("prepare trash destination failed: {e}"))
+            })?;
+        }
+    }
+
     std::fs::rename(source_path, destination_path)
         .map_err(|e| AppError::ExecutionError(format!("move failed: {e}")))?;
     Ok(format!("Moved {source_path} to {destination_path}"))

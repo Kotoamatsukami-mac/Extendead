@@ -45,6 +45,8 @@ export function HistoryList({ entries, undoableIndex, onUndo }: HistoryListProps
       {visible.map((entry, i) => {
         const icon = OUTCOME_ICON[entry.outcome] ?? '·';
         const isUndoable = undoableIndex !== null && i === 0 && !!entry.inverse_action;
+        const eventCount = entry.execution_events?.length ?? 0;
+        const lastEvent = eventCount > 0 ? entry.execution_events?.[eventCount - 1]?.message ?? '' : '';
 
         return (
           <li
@@ -57,6 +59,11 @@ export function HistoryList({ entries, undoableIndex, onUndo }: HistoryListProps
             <span className="history-list__input" title={entry.command.raw_input}>
               {entry.command.raw_input}
             </span>
+            {eventCount > 0 && (
+              <span className="history-list__events" title={lastEvent}>
+                {eventCount} events
+              </span>
+            )}
             <span className="history-list__time">{formatTimestamp(entry.timestamp)}</span>
             {isUndoable && (
               <button

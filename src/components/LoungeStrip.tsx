@@ -129,16 +129,9 @@ export function LoungeStrip({
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={stateClass}>
-      <div
-        className="lounge-strip__drag"
-        data-tauri-drag-region
-        aria-hidden="true"
-      >
-        <span className="lounge-strip__marker" data-tauri-drag-region />
-      </div>
-
-      <div className="lounge-strip__body">
+    <div className={stateClass} data-tauri-drag-region>
+      <div className="lounge-strip__body" data-tauri-drag-region>
+        <span className="lounge-strip__marker" aria-hidden="true" />
         <div className="lounge-strip__input-shell">
           {resultFeedback ? (
             <span className={`lounge-strip__feedback lounge-strip__feedback--${resultFeedback.type}`}>
@@ -193,6 +186,9 @@ export function LoungeStrip({
         </div>
 
         <div className="lounge-strip__meta">
+          <span className={`lounge-strip__pin-state ${alwaysOnTop ? 'lounge-strip__pin-state--active' : ''}`}>
+            {alwaysOnTop ? 'Pinned' : 'Floating'}
+          </span>
           {(showPrediction || showSuggestions) && <span className="lounge-strip__hint">tab</span>}
 
           {onOpenEngineLink && (
@@ -214,8 +210,9 @@ export function LoungeStrip({
             onClick={onToggleAlwaysOnTop}
             title={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
             aria-label={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
+            aria-pressed={alwaysOnTop}
           >
-            {alwaysOnTop ? '◉' : '◎'}
+            {alwaysOnTop ? 'UNPIN' : 'PIN'}
           </button>
         </div>
       </div>

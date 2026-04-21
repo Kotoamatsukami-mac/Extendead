@@ -34,7 +34,8 @@ pub fn decide(candidates: &[CandidateIntent]) -> ArbitrationResult {
         return ArbitrationResult {
             decision: ArbitrationDecision::Clarify,
             chosen_index: Some(0),
-            explanation: "A likely task family exists, but required slots still need repair.".to_string(),
+            explanation: "A likely task family exists, but required slots still need repair."
+                .to_string(),
         };
     }
 
@@ -44,7 +45,8 @@ pub fn decide(candidates: &[CandidateIntent]) -> ArbitrationResult {
             return ArbitrationResult {
                 decision: ArbitrationDecision::OfferChoices,
                 chosen_index: None,
-                explanation: "Multiple materially different candidate actions remain plausible.".to_string(),
+                explanation: "Multiple materially different candidate actions remain plausible."
+                    .to_string(),
             };
         }
     }

@@ -27,7 +27,8 @@ export type UnresolvedCode =
   | 'base_path_unresolved'
   | 'target_already_exists'
   | 'destination_path_unresolved'
-  | 'destination_parent_missing';
+  | 'destination_parent_missing'
+  | 'permanent_delete_blocked';
 
 export type ExecutionOutcome =
   | 'success'

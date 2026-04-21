@@ -56,6 +56,7 @@ pub enum UnresolvedCode {
     TargetAlreadyExists,
     DestinationPathUnresolved,
     DestinationParentMissing,
+    PermanentDeleteBlocked,
 }
 
 // ── Execution outcome ────────────────────────────────────────────────────────
@@ -130,6 +131,16 @@ pub struct ParsedCommand {
     pub approval_status: ApprovalStatus,
     pub unresolved_code: Option<UnresolvedCode>,
     pub unresolved_message: Option<String>,
+}
+
+// ── Suggestion projection ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandSuggestion {
+    pub id: String,
+    pub family: String,
+    pub canonical: String,
+    pub detail: String,
 }
 
 // ── Execution event ──────────────────────────────────────────────────────────

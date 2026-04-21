@@ -18,6 +18,12 @@ pub enum IntentFamily {
     FileMove,
     #[serde(rename = "service.open")]
     ServiceOpen,
+    #[serde(rename = "browser.tab")]
+    BrowserTab,
+    #[serde(rename = "display.brightness")]
+    DisplayBrightness,
+    #[serde(rename = "path.trash")]
+    PathTrash,
     #[serde(rename = "unknown")]
     Unknown,
 }
@@ -36,6 +42,18 @@ pub enum CanonicalAction {
     MovePath,
     #[serde(rename = "open_service")]
     OpenService,
+    #[serde(rename = "browser_new_tab")]
+    BrowserNewTab,
+    #[serde(rename = "browser_close_tab")]
+    BrowserCloseTab,
+    #[serde(rename = "browser_reopen_closed_tab")]
+    BrowserReopenClosedTab,
+    #[serde(rename = "brightness_up")]
+    BrightnessUp,
+    #[serde(rename = "brightness_down")]
+    BrightnessDown,
+    #[serde(rename = "trash_path")]
+    TrashPath,
     #[serde(rename = "unknown")]
     Unknown,
 }

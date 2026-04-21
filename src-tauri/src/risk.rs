@@ -28,7 +28,15 @@ fn action_risk(action: &ResolvedAction, kind: &CommandKind) -> RiskLevel {
 
 fn applescript_template_risk(template_id: &str) -> RiskLevel {
     match template_id {
-        "mute_volume" | "unmute_volume" | "set_volume" | "get_volume" => RiskLevel::R1,
+        "mute_volume"
+        | "unmute_volume"
+        | "set_volume"
+        | "get_volume"
+        | "browser_new_tab"
+        | "browser_close_tab"
+        | "browser_reopen_closed_tab"
+        | "brightness_up"
+        | "brightness_down" => RiskLevel::R1,
         _ => RiskLevel::R2,
     }
 }
@@ -43,9 +51,18 @@ pub fn requires_approval(command: &ParsedCommand, risk: &RiskLevel) -> bool {
 fn requires_semantic_approval(command: &ParsedCommand) -> bool {
     command.routes.iter().any(|route| match &route.action {
         ResolvedAction::MovePath { .. } => true,
-        ResolvedAction::AppleScriptTemplate { template_id, .. } => {
-            !matches!(template_id.as_str(), "mute_volume" | "unmute_volume" | "set_volume" | "get_volume")
-        }
+        ResolvedAction::AppleScriptTemplate { template_id, .. } => !matches!(
+            template_id.as_str(),
+            "mute_volume"
+                | "unmute_volume"
+                | "set_volume"
+                | "get_volume"
+                | "browser_new_tab"
+                | "browser_close_tab"
+                | "browser_reopen_closed_tab"
+                | "brightness_up"
+                | "brightness_down"
+        ),
         _ => false,
     })
 }
@@ -64,6 +81,20 @@ pub fn inverse_action(action: &ResolvedAction) -> Option<ResolvedAction> {
             "mute_volume" => Some(ResolvedAction::AppleScriptTemplate {
                 script: "set volume without output muted".to_string(),
                 template_id: "unmute_volume".to_string(),
+            }),
+            "brightness_up" => Some(ResolvedAction::AppleScriptTemplate {
+                script: "tell application \"System Events\" to key code 145".to_string(),
+                template_id: "brightness_down".to_string(),
+            }),
+            "brightness_down" => Some(ResolvedAction::AppleScriptTemplate {
+                script: "tell application \"System Events\" to key code 144".to_string(),
+                template_id: "brightness_up".to_string(),
+            }),
+            "browser_close_tab" => Some(ResolvedAction::AppleScriptTemplate {
+                script:
+                    "tell application \"System Events\" to keystroke \"t\" using {command down, shift down}"
+                        .to_string(),
+                template_id: "browser_reopen_closed_tab".to_string(),
             }),
             "set_volume" => None,
             _ => None,
@@ -176,6 +207,21 @@ mod tests {
             CommandKind::Filesystem,
         );
         assert!(requires_approval(&command, &RiskLevel::R2));
+    }
+
+    #[test]
+    fn browser_new_tab_is_r1_without_approval() {
+        let command = make_command(
+            vec![make_route(ResolvedAction::AppleScriptTemplate {
+                script:
+                    "tell application \"System Events\" to keystroke \"t\" using {command down}"
+                        .to_string(),
+                template_id: "browser_new_tab".to_string(),
+            })],
+            CommandKind::MixedWorkflow,
+        );
+        assert_eq!(score(&command.kind, &command.routes), RiskLevel::R1);
+        assert!(!requires_approval(&command, &RiskLevel::R1));
     }
 
     #[test]

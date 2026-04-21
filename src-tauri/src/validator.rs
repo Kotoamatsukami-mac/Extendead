@@ -6,8 +6,17 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 
 /// Approved AppleScript template IDs.
-static APPROVED_TEMPLATE_IDS: &[&str] =
-    &["mute_volume", "unmute_volume", "set_volume", "get_volume"];
+static APPROVED_TEMPLATE_IDS: &[&str] = &[
+    "mute_volume",
+    "unmute_volume",
+    "set_volume",
+    "get_volume",
+    "browser_new_tab",
+    "browser_close_tab",
+    "browser_reopen_closed_tab",
+    "brightness_up",
+    "brightness_down",
+];
 
 /// Validate that a parsed command and its selected route are safe to execute.
 pub fn validate(command: &ParsedCommand, route_index: usize) -> Result<(), AppError> {
@@ -42,17 +51,13 @@ pub fn validate_action(action: &ResolvedAction) -> Result<(), AppError> {
         ResolvedAction::MovePath {
             source_path,
             destination_path,
-        } => {
-            validate_home_path(source_path)?;
-            validate_home_path(destination_path)
-        }
+        } => validate_move_path(source_path, destination_path),
     }
 }
 
 fn validate_url(url: &str) -> Result<(), AppError> {
-    let host = extract_host(url).ok_or_else(|| {
-        AppError::ValidationError(format!("Cannot extract host from URL: {url}"))
-    })?;
+    let host = extract_host(url)
+        .ok_or_else(|| AppError::ValidationError(format!("Cannot extract host from URL: {url}")))?;
     if !service_catalog::is_approved_service_host(&host) {
         return Err(AppError::ValidationError(format!(
             "URL host '{host}' is not on the approved list"
@@ -71,11 +76,7 @@ fn validate_bundle_id(bundle_id: &str) -> Result<(), AppError> {
 }
 
 fn validate_home_path(path: &str) -> Result<(), AppError> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| AppError::ValidationError("Cannot resolve home directory".to_string()))?;
-    let home_canonical = std::fs::canonicalize(&home).map_err(|e| {
-        AppError::ValidationError(format!("Cannot canonicalize home directory: {e}"))
-    })?;
+    let (home_canonical, _) = canonical_home_and_trash()?;
 
     let requested = Path::new(path);
     let requested_canonical = canonicalize_path_for_boundary(requested).map_err(|e| {
@@ -88,6 +89,57 @@ fn validate_home_path(path: &str) -> Result<(), AppError> {
         )));
     }
     Ok(())
+}
+
+fn validate_move_path(source_path: &str, destination_path: &str) -> Result<(), AppError> {
+    let (home_canonical, trash_canonical) = canonical_home_and_trash()?;
+
+    let source = canonicalize_existing_path_for_boundary(Path::new(source_path)).map_err(|e| {
+        AppError::ValidationError(format!(
+            "Source path '{source_path}' cannot be resolved safely: {e}"
+        ))
+    })?;
+    if !source.starts_with(&home_canonical) {
+        return Err(AppError::ValidationError(format!(
+            "Source path '{source_path}' is outside the home directory"
+        )));
+    }
+
+    let destination = canonicalize_path_for_boundary(Path::new(destination_path)).map_err(|e| {
+        AppError::ValidationError(format!(
+            "Destination path '{destination_path}' cannot be resolved safely: {e}"
+        ))
+    })?;
+    if !destination.starts_with(&home_canonical) {
+        return Err(AppError::ValidationError(format!(
+            "Destination path '{destination_path}' is outside the home directory"
+        )));
+    }
+
+    if destination.starts_with(&trash_canonical) {
+        if source == home_canonical {
+            return Err(AppError::ValidationError(
+                "Cannot move the entire home directory to Trash".to_string(),
+            ));
+        }
+        if source == trash_canonical || source.starts_with(&trash_canonical) {
+            return Err(AppError::ValidationError(
+                "Path is already in Trash".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn canonical_home_and_trash() -> Result<(PathBuf, PathBuf), AppError> {
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::ValidationError("Cannot resolve home directory".to_string()))?;
+    let home_canonical = std::fs::canonicalize(&home).map_err(|e| {
+        AppError::ValidationError(format!("Cannot canonicalize home directory: {e}"))
+    })?;
+    let trash_canonical = home_canonical.join(".Trash");
+    Ok((home_canonical, trash_canonical))
 }
 
 fn canonicalize_path_for_boundary(path: &Path) -> io::Result<PathBuf> {
@@ -136,6 +188,33 @@ fn canonicalize_path_for_boundary(path: &Path) -> io::Result<PathBuf> {
         canonical.push(component);
     }
     Ok(canonical)
+}
+
+fn canonicalize_existing_path_for_boundary(path: &Path) -> io::Result<PathBuf> {
+    if !path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path must be absolute",
+        ));
+    }
+
+    for component in path.components() {
+        if matches!(component, Component::ParentDir) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "parent traversal is not allowed",
+            ));
+        }
+    }
+
+    if !path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "path does not exist",
+        ));
+    }
+
+    std::fs::canonicalize(path)
 }
 
 fn extract_host(url: &str) -> Option<String> {
@@ -245,5 +324,27 @@ mod tests {
         };
         let err = validate(&cmd, 99).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));
+    }
+
+    #[test]
+    fn browser_tab_template_is_allowed() {
+        let action = ResolvedAction::AppleScriptTemplate {
+            script: "tell application \"System Events\" to keystroke \"t\" using {command down}"
+                .to_string(),
+            template_id: "browser_new_tab".to_string(),
+        };
+        assert!(validate_action(&action).is_ok());
+    }
+
+    #[test]
+    fn trashing_home_directory_is_rejected() {
+        if let Some(home) = dirs::home_dir() {
+            let action = ResolvedAction::MovePath {
+                source_path: home.display().to_string(),
+                destination_path: format!("{}/.Trash/home", home.display()),
+            };
+            let err = validate_action(&action).unwrap_err();
+            assert!(matches!(err, AppError::ValidationError(_)));
+        }
     }
 }

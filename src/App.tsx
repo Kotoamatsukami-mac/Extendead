@@ -3,17 +3,14 @@ import { DeveloperPanel } from './components/DeveloperPanel';
 import { ExpandedConsole } from './components/ExpandedConsole';
 import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
-import { useMachineState } from './hooks/useMachineState';
 import { usePermissionStatus } from './hooks/usePermissionStatus';
 import type {
   CommandSuggestion,
   ExecutionResult,
   HistoryEntry,
-  MachineInfo,
   ParsedCommand,
   ProviderKeyStatus,
   ResultFeedback,
-  ServiceDefinition,
 } from './types/commands';
 import type { ExecutionEvent } from './types/events';
 
@@ -52,7 +49,7 @@ export function App() {
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [serviceCatalog, setServiceCatalog] = useState<ServiceDefinition[]>([]);
+  const [suggestions, setSuggestions] = useState<CommandSuggestion[]>([]);
   const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
   const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
   const [developerBusy, setDeveloperBusy] = useState(false);
@@ -65,8 +62,8 @@ export function App() {
 
   const oneShotRef = useRef(false);
   const feedbackTimerRef = useRef<number>(0);
+  const suggestionRequestRef = useRef(0);
 
-  const { machineInfo } = useMachineState();
   const { permissionStatus, refresh: refreshPermissionStatus } = usePermissionStatus();
 
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
@@ -161,7 +158,6 @@ export function App() {
 
   useEffect(() => {
     bridge.getHistory().then(setHistory);
-    bridge.getServiceCatalog().then(setServiceCatalog);
     bridge.getAppConfig().then((config) => {
       if (config) {
         setAlwaysOnTop(config.always_on_top);
@@ -187,10 +183,26 @@ export function App() {
     [inputValue, history],
   );
 
-  const suggestions = useMemo(
-    () => getCommandSuggestions(inputValue, machineInfo, serviceCatalog),
-    [inputValue, machineInfo, serviceCatalog],
-  );
+  useEffect(() => {
+    const normalized = inputValue.trim();
+    if (normalized.length < 2 || !!resultFeedback) {
+      setSuggestions([]);
+      return;
+    }
+
+    const requestId = suggestionRequestRef.current + 1;
+    suggestionRequestRef.current = requestId;
+
+    const timer = window.setTimeout(() => {
+      bridge.suggestCommands(normalized).then((nextSuggestions) => {
+        if (suggestionRequestRef.current === requestId) {
+          setSuggestions(nextSuggestions);
+        }
+      });
+    }, 90);
+
+    return () => window.clearTimeout(timer);
+  }, [bridge, inputValue, resultFeedback]);
 
   const refreshDeveloperStatus = useCallback(async () => {
     setDeveloperBusy(true);
@@ -287,7 +299,12 @@ export function App() {
   const handleToggleAlwaysOnTop = useCallback(() => {
     const next = !alwaysOnTop;
     setAlwaysOnTop(next);
-    bridge.toggleAlwaysOnTop(next);
+    void bridge.toggleAlwaysOnTop(next).then(async () => {
+      const config = await bridge.getAppConfig();
+      if (config) {
+        setAlwaysOnTop(config.always_on_top);
+      }
+    });
   }, [alwaysOnTop, bridge]);
 
   const handleLinkPrimaryEngine = useCallback(
@@ -365,7 +382,30 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [mode, execState, handleCollapse, handleConfirm, handleCancel]);
 
-  void machineInfo;
+  useEffect(() => {
+    const refreshConfig = () => {
+      void bridge.getAppConfig().then((config) => {
+        if (config) {
+          setAlwaysOnTop(config.always_on_top);
+        }
+      });
+    };
+
+    refreshConfig();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshConfig();
+      }
+    }, 15_000);
+
+    window.addEventListener('focus', refreshConfig);
+    document.addEventListener('visibilitychange', refreshConfig);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshConfig);
+      document.removeEventListener('visibilitychange', refreshConfig);
+    };
+  }, [bridge]);
 
   return (
     <div className={`app app--${mode}`}>
@@ -438,251 +478,6 @@ function getPrediction(inputValue: string, history: HistoryEntry[]): string {
   return '';
 }
 
-function getCommandSuggestions(
-  inputValue: string,
-  machineInfo: MachineInfo | null,
-  serviceCatalog: ServiceDefinition[],
-): CommandSuggestion[] {
-  const normalized = normalizePhrase(inputValue);
-  if (normalized.length < 2) return [];
-
-  const commands: CommandSuggestion[] = [];
-  const appNames = getInstalledAppNames(machineInfo);
-  const appQuery = getRemainderAfterPrefix(normalized, ['close ', 'quit ', 'exit ', 'open ', 'launch ', 'start ', 'run ']);
-  const serviceQuery = getServiceQuery(normalized);
-  const titleCaseQuery = titleCase(appQuery);
-
-  if (startsWithAny(normalized, ['close ', 'quit ', 'exit '])) {
-    const matchingApps = filterAppNames(appNames, appQuery);
-    for (const app of matchingApps) {
-      commands.push({
-        id: `close-${app.toLowerCase()}`,
-        family: 'close app',
-        canonical: `close ${app.toLowerCase()}`,
-        detail: `quit ${app}`,
-      });
-    }
-  }
-
-  if (startsWithAny(normalized, ['open ', 'launch ', 'start ', 'run '])) {
-    if (looksLikePath(appQuery)) {
-      commands.push({
-        id: `path-${appQuery}`,
-        family: 'open path',
-        canonical: `open ${appQuery}`,
-        detail: 'open path in Finder',
-      });
-    } else {
-      const matchingApps = filterAppNames(appNames, appQuery);
-      for (const app of matchingApps) {
-        commands.push({
-          id: `open-${app.toLowerCase()}`,
-          family: 'open app',
-          canonical: `open ${app.toLowerCase()}`,
-          detail: `launch ${app}`,
-        });
-      }
-    }
-  }
-
-  const matchingServices = filterServices(serviceCatalog, serviceQuery);
-  for (const service of matchingServices) {
-    commands.push({
-      id: `service-${service.id}`,
-      family: 'open service',
-      canonical: `open ${service.display_name.toLowerCase()}`,
-      detail: `open ${service.display_name} in browser`,
-    });
-  }
-
-  if (startsWithAny(normalized, ['create folder', 'make folder', 'new folder'])) {
-    const folderName = extractFolderName(inputValue);
-    const canonicalName = folderName || (titleCaseQuery || 'New Folder');
-    commands.push({
-      id: `create-folder-${canonicalName.toLowerCase()}`,
-      family: 'create folder',
-      canonical: `create folder called ${canonicalName} in home`,
-      detail: 'create folder in home directory',
-    });
-  }
-
-  if (startsWithAny(normalized, ['move ', 'put '])) {
-    const moveSuggestion = extractMoveSuggestion(inputValue);
-    if (moveSuggestion) {
-      commands.push(moveSuggestion);
-    }
-  }
-
-  if (normalized.includes('download')) {
-    commands.push({
-      id: 'downloads',
-      family: 'open path',
-      canonical: 'downloads',
-      detail: 'open Downloads in Finder',
-    });
-  }
-
-  if (normalized.includes('display') || normalized.includes('screen') || normalized.includes('monitor')) {
-    commands.push({
-      id: 'display-settings',
-      family: 'settings',
-      canonical: 'display settings',
-      detail: 'open System Settings → Displays',
-    });
-  }
-
-  if (normalized.includes('mute')) {
-    commands.push({
-      id: 'mute',
-      family: 'sound',
-      canonical: 'mute',
-      detail: 'mute system audio',
-    });
-  }
-
-  const volumeSuggestion = extractVolumeSuggestion(normalized);
-  if (volumeSuggestion) {
-    commands.push(volumeSuggestion);
-  }
-
-  return dedupeSuggestions(commands).slice(0, 4);
-}
-
-function getInstalledAppNames(machineInfo: MachineInfo | null): string[] {
-  const fromApps = machineInfo?.installed_apps?.map((app) => app.name) ?? [];
-  const fromBrowsers = machineInfo?.installed_browsers?.map((app) => app.name) ?? [];
-  const merged = [...fromApps, ...fromBrowsers];
-  return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
-}
-
-function filterAppNames(appNames: string[], query: string): string[] {
-  const normalizedQuery = normalizePhrase(query);
-  if (!normalizedQuery) return appNames.slice(0, 4);
-  return appNames
-    .filter((app) => normalizePhrase(app).includes(normalizedQuery))
-    .slice(0, 4);
-}
-
-function filterServices(serviceCatalog: ServiceDefinition[], query: string): ServiceDefinition[] {
-  const normalizedQuery = normalizePhrase(query);
-  if (!normalizedQuery) {
-    return [];
-  }
-
-  return serviceCatalog
-    .filter((service) => {
-      const display = normalizePhrase(service.display_name);
-      if (display.includes(normalizedQuery) || normalizedQuery.includes(display)) {
-        return true;
-      }
-      return service.aliases.some((alias) => {
-        const normalizedAlias = normalizePhrase(alias);
-        return normalizedAlias.includes(normalizedQuery) || normalizedQuery.includes(normalizedAlias);
-      });
-    })
-    .slice(0, 4);
-}
-
-function getServiceQuery(value: string): string {
-  const normalized = normalizePhrase(value);
-  for (const prefix of ['open ', 'watch ', 'browse ', 'visit ', 'go to ']) {
-    if (normalized.startsWith(prefix)) {
-      return normalized.slice(prefix.length).split(/\s+in\s+/i)[0]?.trim() ?? '';
-    }
-  }
-  return normalized.split(/\s+in\s+/i)[0]?.trim() ?? '';
-}
-
-function extractFolderName(raw: string): string {
-  const trimmed = raw.trim();
-  const lower = normalizePhrase(trimmed);
-  for (const marker of [' called ', ' named ']) {
-    const index = lower.indexOf(marker);
-    if (index >= 0) {
-      const after = trimmed.slice(index + marker.length).trim();
-      const baseSplit = after.split(/\s+(?:in|inside|under)\s+/i)[0]?.trim();
-      return stripQuotes(baseSplit || '');
-    }
-  }
-  return '';
-}
-
-function extractMoveSuggestion(raw: string): CommandSuggestion | null {
-  const lower = normalizePhrase(raw);
-  const marker = lower.includes(' into ') ? ' into ' : lower.includes(' to ') ? ' to ' : '';
-  if (!marker) return null;
-  const parts = raw.trim().split(new RegExp(marker, 'i'));
-  if (parts.length < 2) return null;
-  const source = stripQuotes(parts[0].replace(/^(move|put)\s+/i, '').trim());
-  const destination = stripQuotes(parts[1].trim());
-  if (!source || !destination) return null;
-  return {
-    id: `move-${source}-${destination}`,
-    family: 'move path',
-    canonical: `move ${source} to ${destination}`,
-    detail: 'move path inside home directory',
-  };
-}
-
-function extractVolumeSuggestion(normalized: string): CommandSuggestion | null {
-  const match = normalized.match(/(?:set\s+volume\s+to|volume\s+to|set\s+volume|volume\s+at)\s+(\d{1,3})/);
-  if (!match) return null;
-  const level = Math.max(0, Math.min(100, Number(match[1])));
-  return {
-    id: `volume-${level}`,
-    family: 'sound',
-    canonical: `set volume to ${level}`,
-    detail: 'set output volume',
-  };
-}
-
-function dedupeSuggestions(items: CommandSuggestion[]): CommandSuggestion[] {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const key = `${item.family}:${item.canonical.toLowerCase()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function startsWithAny(value: string, prefixes: string[]): boolean {
-  return prefixes.some((prefix) => value.startsWith(prefix));
-}
-
-function getRemainderAfterPrefix(value: string, prefixes: string[]): string {
-  for (const prefix of prefixes) {
-    if (value.startsWith(prefix)) {
-      return value.slice(prefix.length).trim();
-    }
-  }
-  return value;
-}
-
-function normalizePhrase(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function titleCase(value: string): string {
-  return value
-    .split(' ')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function stripQuotes(value: string): string {
-  return value.trim().replace(/^['"“”]+|['"“”]+$/g, '');
-}
-
-function looksLikePath(value: string): boolean {
-  const trimmed = value.trim();
-  return trimmed.startsWith('~/')
-    || trimmed.startsWith('/')
-    || trimmed.includes('/')
-    || ['desktop', 'downloads', 'documents', 'home'].includes(trimmed);
-}
-
 function getUnresolvedMessage(cmd: ParsedCommand): string {
   switch (cmd.unresolved_code) {
     case 'unsupported_command':
@@ -705,6 +500,8 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
       return cmd.unresolved_message?.trim() || 'I could not resolve the destination path.';
     case 'destination_parent_missing':
       return cmd.unresolved_message?.trim() || 'The destination parent folder does not exist.';
+    case 'permanent_delete_blocked':
+      return cmd.unresolved_message?.trim() || 'Permanent delete is blocked. Use trash <path> instead.';
     default:
       break;
   }
