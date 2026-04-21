@@ -11,25 +11,6 @@ pub fn resolve(
 ) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
     let browsers = &machine.installed_browsers;
     match intent {
-        Intent::OpenYoutube => {
-            let (kind, routes) = resolve_service_id(browsers, "youtube");
-            (kind, routes, None)
-        }
-        Intent::OpenYoutubeInSafari => {
-            resolve_service_in_browser(machine, "youtube", "Safari", "com.apple.Safari")
-        }
-        Intent::OpenYoutubeInChrome => {
-            resolve_service_in_browser(machine, "youtube", "Google Chrome", "com.google.Chrome")
-        }
-        Intent::OpenYoutubeInFirefox => {
-            resolve_service_in_browser(machine, "youtube", "Firefox", "org.mozilla.firefox")
-        }
-        Intent::OpenYoutubeInBrave => {
-            resolve_service_in_browser(machine, "youtube", "Brave", "com.brave.Browser")
-        }
-        Intent::OpenYoutubeInArc => {
-            resolve_service_in_browser(machine, "youtube", "Arc", "company.thebrowser.Browser")
-        }
         Intent::OpenSafari => resolve_open_app(machine, "Safari", "com.apple.Safari"),
         Intent::OpenChrome => resolve_open_app(machine, "Google Chrome", "com.google.Chrome"),
         Intent::OpenFirefox => resolve_open_app(machine, "Firefox", "org.mozilla.firefox"),
@@ -38,6 +19,9 @@ pub fn resolve(
         Intent::OpenFinder => resolve_open_app(machine, "Finder", "com.apple.finder"),
         Intent::OpenSlack => resolve_open_app(machine, "Slack", "com.tinyspeck.slackmacgap"),
         Intent::OpenService(service_id) => resolve_service(machine, service_id),
+        Intent::OpenServiceInBrowser { service_id, browser } => {
+            resolve_service_in_named_browser(machine, service_id, browser)
+        }
         Intent::OpenAppNamed(name) => resolve_app_named(machine, name, false),
         Intent::CloseAppNamed(name) => resolve_app_named(machine, name, true),
         Intent::OpenPath(path) => resolve_open_path(path),
@@ -116,20 +100,11 @@ fn resolve_service_id(browsers: &[BrowserInfo], service_id: &str) -> (CommandKin
     (CommandKind::MixedWorkflow, routes)
 }
 
-fn resolve_service_in_browser(
+fn resolve_service_in_named_browser(
     machine: &MachineInfo,
     service_id: &str,
-    browser_name: &str,
-    bundle_id: &str,
+    browser_query: &str,
 ) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
-    if !machine::is_app_installed(machine, bundle_id) {
-        return (
-            CommandKind::MixedWorkflow,
-            vec![],
-            Some(format!("{browser_name} is not installed on this Mac.")),
-        );
-    }
-
     let Some(service) = service_catalog::service_by_id(service_id) else {
         return (
             CommandKind::MixedWorkflow,
@@ -138,15 +113,23 @@ fn resolve_service_in_browser(
         );
     };
 
+    let Some((browser_name, bundle_id)) = find_installed_browser(machine, browser_query) else {
+        return (
+            CommandKind::MixedWorkflow,
+            vec![],
+            Some(format!("{} is not installed on this Mac.", display_name(browser_query))),
+        );
+    };
+
     (
         CommandKind::MixedWorkflow,
         vec![ResolvedRoute {
-            label: format!("Open {} in {browser_name}", service.display_name),
-            description: format!("Open {} in {browser_name}", service.display_name),
+            label: format!("Open {} in {}", service.display_name, browser_name),
+            description: format!("Open {} in {}", service.display_name, browser_name),
             action: ResolvedAction::OpenUrl {
                 url: service.url.to_string(),
-                browser_bundle: bundle_id.to_string(),
-                browser_name: browser_name.to_string(),
+                browser_bundle: bundle_id,
+                browser_name,
             },
         }],
         None,
@@ -396,6 +379,15 @@ fn find_installed_app(machine: &MachineInfo, query: &str) -> Option<(String, Str
     }
 
     None
+}
+
+fn find_installed_browser(machine: &MachineInfo, query: &str) -> Option<(String, String)> {
+    let canonical = canonical_app_name(query);
+    machine
+        .installed_browsers
+        .iter()
+        .find(|browser| canonical_app_name(&browser.name) == canonical)
+        .map(|browser| (browser.name.clone(), browser.bundle_id.clone()))
 }
 
 fn canonical_app_name(name: &str) -> String {
