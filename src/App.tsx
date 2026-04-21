@@ -306,6 +306,10 @@ export function App() {
     }
   }, [bridge]);
 
+  const handleInspectLocal = useCallback(async (value: string) => {
+    return bridge.debugInterpretLocal(value);
+  }, [bridge]);
+
   const handleInputChange = useCallback((value: string) => {
     setInputValue(value);
     if (resultFeedback) {
@@ -381,6 +385,7 @@ export function App() {
             onRefresh={() => void refreshDeveloperStatus()}
             onLink={handleLinkPrimaryEngine}
             onClear={handleClearPrimaryEngine}
+            onInspectLocal={handleInspectLocal}
             onClose={handleCollapse}
           />
         ) : (
