@@ -5,11 +5,32 @@ use crate::intent_language::{
 };
 use crate::intent_ontology;
 use crate::models::RiskLevel;
+use crate::service_catalog;
 
 pub fn interpret(input: &str) -> Vec<CandidateIntent> {
     let normalized = input.trim().to_lowercase();
     if normalized.is_empty() {
         return vec![];
+    }
+
+    if let Some((service_id, browser)) = extract_service_open(&normalized) {
+        let mut slots = BTreeMap::new();
+        slots.insert("service".to_string(), service_id.clone());
+        if let Some(browser) = browser {
+            slots.insert("browser".to_string(), browser);
+        }
+
+        return vec![CandidateIntent {
+            family: IntentFamily::ServiceOpen,
+            canonical_action: CanonicalAction::OpenService,
+            slots,
+            missing_slots: vec![],
+            confidence: 0.90,
+            clarification_needed: false,
+            risk_baseline: RiskLevel::R1,
+            executor_family: ExecutorFamily::Browser,
+            source: InterpretationSource::LocalPattern,
+        }];
     }
 
     if let Some(app) = remainder_after(&normalized, &["close ", "quit ", "exit ", "shut "]) {
@@ -69,6 +90,31 @@ pub fn interpret(input: &str) -> Vec<CandidateIntent> {
             source: InterpretationSource::LocalOntology,
         })
         .collect()
+}
+
+fn extract_service_open(normalized: &str) -> Option<(String, Option<String>)> {
+    if let Some(service) = service_catalog::find_service_by_query(normalized) {
+        return Some((service.id.to_string(), None));
+    }
+
+    for prefix in ["open ", "watch ", "browse ", "visit ", "go to "] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            if let Some((service_query, browser_query)) = rest.rsplit_once(" in ") {
+                if let Some(service) = service_catalog::find_service_by_query(service_query.trim()) {
+                    let browser = browser_query.trim();
+                    if !browser.is_empty() {
+                        return Some((service.id.to_string(), Some(browser.to_string())));
+                    }
+                }
+            }
+
+            if let Some(service) = service_catalog::find_service_by_query(rest.trim()) {
+                return Some((service.id.to_string(), None));
+            }
+        }
+    }
+
+    None
 }
 
 fn slot_map(entry: Option<(&str, &str)>) -> BTreeMap<String, String> {
