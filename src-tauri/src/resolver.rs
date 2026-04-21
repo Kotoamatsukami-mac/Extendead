@@ -1,15 +1,20 @@
 use std::path::{Path, PathBuf};
 
 use crate::machine;
-use crate::models::{BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedRoute};
+use crate::models::{
+    BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedRoute, UnresolvedCode,
+};
 use crate::parser::Intent;
 use crate::service_catalog;
 
-pub fn resolve(
-    intent: &Intent,
-    machine: &MachineInfo,
-) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
-    let browsers = &machine.installed_browsers;
+type ResolveResult = (
+    CommandKind,
+    Vec<ResolvedRoute>,
+    Option<UnresolvedCode>,
+    Option<String>,
+);
+
+pub fn resolve(intent: &Intent, machine: &MachineInfo) -> ResolveResult {
     match intent {
         Intent::OpenSafari => resolve_open_app(machine, "Safari", "com.apple.Safari"),
         Intent::OpenChrome => resolve_open_app(machine, "Google Chrome", "com.google.Chrome"),
@@ -29,42 +34,41 @@ pub fn resolve(
         Intent::MovePath { source, destination } => resolve_move_path(machine, source, destination),
         Intent::MuteVolume => {
             let (kind, routes) = resolve_mute();
-            (kind, routes, None)
+            (kind, routes, None, None)
         }
         Intent::SetVolume(level) => {
             let (kind, routes) = resolve_set_volume(*level);
-            (kind, routes, None)
+            (kind, routes, None, None)
         }
         Intent::OpenDisplaySettings => {
             let (kind, routes) = resolve_display_settings();
-            (kind, routes, None)
+            (kind, routes, None, None)
         }
         Intent::RevealDownloads => {
             let (kind, routes) = resolve_downloads();
-            (kind, routes, None)
+            (kind, routes, None, None)
         }
         Intent::Unknown(_) => (
             CommandKind::Unknown,
             vec![],
+            Some(UnresolvedCode::UnsupportedCommand),
             Some("That command is outside current local coverage.".to_string()),
         ),
     }
 }
 
-fn resolve_service(
-    machine: &MachineInfo,
-    service_id: &str,
-) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+fn resolve_service(machine: &MachineInfo, service_id: &str) -> ResolveResult {
     if service_catalog::service_by_id(service_id).is_none() {
         return (
             CommandKind::MixedWorkflow,
             vec![],
+            Some(UnresolvedCode::UnsupportedService),
             Some("That service is outside current local coverage.".to_string()),
         );
     }
 
     let (kind, routes) = resolve_service_id(&machine.installed_browsers, service_id);
-    (kind, routes, None)
+    (kind, routes, None, None)
 }
 
 fn resolve_service_id(browsers: &[BrowserInfo], service_id: &str) -> (CommandKind, Vec<ResolvedRoute>) {
@@ -104,11 +108,12 @@ fn resolve_service_in_named_browser(
     machine: &MachineInfo,
     service_id: &str,
     browser_query: &str,
-) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+) -> ResolveResult {
     let Some(service) = service_catalog::service_by_id(service_id) else {
         return (
             CommandKind::MixedWorkflow,
             vec![],
+            Some(UnresolvedCode::UnsupportedService),
             Some("That service is outside current local coverage.".to_string()),
         );
     };
@@ -117,6 +122,7 @@ fn resolve_service_in_named_browser(
         return (
             CommandKind::MixedWorkflow,
             vec![],
+            Some(UnresolvedCode::BrowserNotInstalled),
             Some(format!("{} is not installed on this Mac.", display_name(browser_query))),
         );
     };
@@ -133,18 +139,16 @@ fn resolve_service_in_named_browser(
             },
         }],
         None,
+        None,
     )
 }
 
-fn resolve_open_app(
-    machine: &MachineInfo,
-    app_name: &str,
-    bundle_id: &str,
-) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+fn resolve_open_app(machine: &MachineInfo, app_name: &str, bundle_id: &str) -> ResolveResult {
     if !machine::is_app_installed(machine, bundle_id) {
         return (
             CommandKind::AppControl,
             vec![],
+            Some(UnresolvedCode::AppNotInstalled),
             Some(format!("{app_name} is not installed on this Mac.")),
         );
     }
@@ -160,20 +164,18 @@ fn resolve_open_app(
             },
         }],
         None,
+        None,
     )
 }
 
-fn resolve_app_named(
-    machine: &MachineInfo,
-    app_name: &str,
-    should_quit: bool,
-) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+fn resolve_app_named(machine: &MachineInfo, app_name: &str, should_quit: bool) -> ResolveResult {
     let query = canonical_app_name(app_name);
     let app = find_installed_app(machine, &query);
     let Some((resolved_name, bundle_id)) = app else {
         return (
             CommandKind::AppControl,
             vec![],
+            Some(UnresolvedCode::AppNotInstalled),
             Some(format!("{} is not installed on this Mac.", display_name(&query))),
         );
     };
@@ -198,15 +200,16 @@ fn resolve_app_named(
         }
     };
 
-    (CommandKind::AppControl, vec![route], None)
+    (CommandKind::AppControl, vec![route], None, None)
 }
 
-fn resolve_open_path(path: &str) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+fn resolve_open_path(path: &str) -> ResolveResult {
     let expanded = expand_user_path(path);
     if !Path::new(&expanded).exists() {
         return (
             CommandKind::Filesystem,
             vec![],
+            Some(UnresolvedCode::PathNotFound),
             Some(format!("{} does not exist.", expanded)),
         );
     }
@@ -219,6 +222,7 @@ fn resolve_open_path(path: &str) -> (CommandKind, Vec<ResolvedRoute>, Option<Str
             action: ResolvedAction::OpenPath { path: expanded },
         }],
         None,
+        None,
     )
 }
 
@@ -226,12 +230,13 @@ fn resolve_create_folder(
     machine: &MachineInfo,
     name: &str,
     base: Option<&str>,
-) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+) -> ResolveResult {
     let base_path = resolve_base_path(machine, base.unwrap_or("home"));
     let Some(base_path) = base_path else {
         return (
             CommandKind::Filesystem,
             vec![],
+            Some(UnresolvedCode::BasePathUnresolved),
             Some("I could not resolve where to create that folder.".to_string()),
         );
     };
@@ -242,6 +247,7 @@ fn resolve_create_folder(
         return (
             CommandKind::Filesystem,
             vec![],
+            Some(UnresolvedCode::TargetAlreadyExists),
             Some(format!("{} already exists.", target_path)),
         );
     }
@@ -254,20 +260,18 @@ fn resolve_create_folder(
             action: ResolvedAction::CreateFolder { path: target_path },
         }],
         None,
+        None,
     )
 }
 
-fn resolve_move_path(
-    machine: &MachineInfo,
-    source: &str,
-    destination: &str,
-) -> (CommandKind, Vec<ResolvedRoute>, Option<String>) {
+fn resolve_move_path(machine: &MachineInfo, source: &str, destination: &str) -> ResolveResult {
     let source_path = expand_user_path(source);
     let source_pb = PathBuf::from(&source_path);
     if !source_pb.exists() {
         return (
             CommandKind::Filesystem,
             vec![],
+            Some(UnresolvedCode::PathNotFound),
             Some(format!("{} does not exist.", source_path)),
         );
     }
@@ -287,6 +291,7 @@ fn resolve_move_path(
         return (
             CommandKind::Filesystem,
             vec![],
+            Some(UnresolvedCode::DestinationPathUnresolved),
             Some("I could not resolve the destination path.".to_string()),
         );
     };
@@ -295,6 +300,7 @@ fn resolve_move_path(
         return (
             CommandKind::Filesystem,
             vec![],
+            Some(UnresolvedCode::DestinationParentMissing),
             Some(format!("{} does not exist.", parent.display())),
         );
     }
@@ -310,6 +316,7 @@ fn resolve_move_path(
                 destination_path,
             },
         }],
+        None,
         None,
     )
 }
