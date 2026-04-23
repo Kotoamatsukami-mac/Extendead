@@ -1,9 +1,9 @@
 use crate::errors::AppError;
 use crate::machine;
 use crate::models::{ParsedCommand, ResolvedAction};
+use crate::path_policy;
 use crate::service_catalog;
-use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
 /// Approved AppleScript template IDs.
 static APPROVED_TEMPLATE_IDS: &[&str] = &[
@@ -76,14 +76,15 @@ fn validate_bundle_id(bundle_id: &str) -> Result<(), AppError> {
 }
 
 fn validate_home_path(path: &str) -> Result<(), AppError> {
-    let (home_canonical, _) = canonical_home_and_trash()?;
+    let boundary = path_policy::canonical_home_and_trash()?;
 
     let requested = Path::new(path);
-    let requested_canonical = canonicalize_path_for_boundary(requested).map_err(|e| {
-        AppError::ValidationError(format!("Path '{path}' cannot be resolved safely: {e}"))
-    })?;
+    let requested_canonical =
+        path_policy::canonicalize_path_for_boundary(requested).map_err(|e| {
+            AppError::ValidationError(format!("Path '{path}' cannot be resolved safely: {e}"))
+        })?;
 
-    if !requested_canonical.starts_with(&home_canonical) {
+    if !requested_canonical.starts_with(&boundary.home_canonical) {
         return Err(AppError::ValidationError(format!(
             "Path '{path}' is outside the home directory"
         )));
@@ -92,37 +93,39 @@ fn validate_home_path(path: &str) -> Result<(), AppError> {
 }
 
 fn validate_move_path(source_path: &str, destination_path: &str) -> Result<(), AppError> {
-    let (home_canonical, trash_canonical) = canonical_home_and_trash()?;
+    let boundary = path_policy::canonical_home_and_trash()?;
 
-    let source = canonicalize_existing_path_for_boundary(Path::new(source_path)).map_err(|e| {
-        AppError::ValidationError(format!(
-            "Source path '{source_path}' cannot be resolved safely: {e}"
-        ))
-    })?;
-    if !source.starts_with(&home_canonical) {
+    let source = path_policy::canonicalize_existing_path_for_boundary(Path::new(source_path))
+        .map_err(|e| {
+            AppError::ValidationError(format!(
+                "Source path '{source_path}' cannot be resolved safely: {e}"
+            ))
+        })?;
+    if !source.starts_with(&boundary.home_canonical) {
         return Err(AppError::ValidationError(format!(
             "Source path '{source_path}' is outside the home directory"
         )));
     }
 
-    let destination = canonicalize_path_for_boundary(Path::new(destination_path)).map_err(|e| {
-        AppError::ValidationError(format!(
-            "Destination path '{destination_path}' cannot be resolved safely: {e}"
-        ))
-    })?;
-    if !destination.starts_with(&home_canonical) {
+    let destination = path_policy::canonicalize_path_for_boundary(Path::new(destination_path))
+        .map_err(|e| {
+            AppError::ValidationError(format!(
+                "Destination path '{destination_path}' cannot be resolved safely: {e}"
+            ))
+        })?;
+    if !destination.starts_with(&boundary.home_canonical) {
         return Err(AppError::ValidationError(format!(
             "Destination path '{destination_path}' is outside the home directory"
         )));
     }
 
-    if destination.starts_with(&trash_canonical) {
-        if source == home_canonical {
+    if destination.starts_with(&boundary.trash_canonical) {
+        if source == boundary.home_canonical {
             return Err(AppError::ValidationError(
                 "Cannot move the entire home directory to Trash".to_string(),
             ));
         }
-        if source == trash_canonical || source.starts_with(&trash_canonical) {
+        if source == boundary.trash_canonical || source.starts_with(&boundary.trash_canonical) {
             return Err(AppError::ValidationError(
                 "Path is already in Trash".to_string(),
             ));
@@ -131,92 +134,6 @@ fn validate_move_path(source_path: &str, destination_path: &str) -> Result<(), A
 
     Ok(())
 }
-
-fn canonical_home_and_trash() -> Result<(PathBuf, PathBuf), AppError> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| AppError::ValidationError("Cannot resolve home directory".to_string()))?;
-    let home_canonical = std::fs::canonicalize(&home).map_err(|e| {
-        AppError::ValidationError(format!("Cannot canonicalize home directory: {e}"))
-    })?;
-    let trash_canonical = home_canonical.join(".Trash");
-    Ok((home_canonical, trash_canonical))
-}
-
-fn canonicalize_path_for_boundary(path: &Path) -> io::Result<PathBuf> {
-    if !path.is_absolute() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "path must be absolute",
-        ));
-    }
-
-    for component in path.components() {
-        if matches!(component, Component::ParentDir) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "parent traversal is not allowed",
-            ));
-        }
-    }
-
-    if path.exists() {
-        return std::fs::canonicalize(path);
-    }
-
-    let mut unresolved_components = Vec::new();
-    let mut cursor = path;
-
-    while !cursor.exists() {
-        let Some(file_name) = cursor.file_name() else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "cannot resolve path root",
-            ));
-        };
-        unresolved_components.push(file_name.to_os_string());
-        let Some(parent) = cursor.parent() else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "path has no parent",
-            ));
-        };
-        cursor = parent;
-    }
-
-    let mut canonical = std::fs::canonicalize(cursor)?;
-    for component in unresolved_components.into_iter().rev() {
-        canonical.push(component);
-    }
-    Ok(canonical)
-}
-
-fn canonicalize_existing_path_for_boundary(path: &Path) -> io::Result<PathBuf> {
-    if !path.is_absolute() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "path must be absolute",
-        ));
-    }
-
-    for component in path.components() {
-        if matches!(component, Component::ParentDir) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "parent traversal is not allowed",
-            ));
-        }
-    }
-
-    if !path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "path does not exist",
-        ));
-    }
-
-    std::fs::canonicalize(path)
-}
-
 fn extract_host(url: &str) -> Option<String> {
     let without_scheme = url
         .strip_prefix("https://")
@@ -321,6 +238,10 @@ mod tests {
             approval_status: ApprovalStatus::Approved,
             unresolved_code: None,
             unresolved_message: None,
+            interpretation_decision: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
         };
         let err = validate(&cmd, 99).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));

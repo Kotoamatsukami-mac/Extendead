@@ -182,7 +182,11 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
   );
 
   const debugInterpretLocal = useCallback(async (input: string): Promise<string> => {
-    return invoke<string>('debug_interpret_local', { input });
+    try {
+      return await invoke<string>('debug_interpret_local', { input });
+    } catch (error) {
+      return `Local interpretation probe unavailable: ${String(error)}`;
+    }
   }, []);
 
   return {

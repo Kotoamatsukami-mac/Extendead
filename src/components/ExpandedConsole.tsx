@@ -13,6 +13,8 @@ import './ExpandedConsole.css';
 type ExecState =
   | 'idle'
   | 'parsing'
+  | 'awaiting_clarify'
+  | 'awaiting_choice'
   | 'awaiting_route'
   | 'awaiting_confirm'
   | 'executing'

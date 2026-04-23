@@ -1,54 +1,182 @@
 use chrono::Utc;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+#[cfg(debug_assertions)]
+use tauri::Emitter;
 
+use crate::errors::AppError;
 use crate::intent_language::{CandidateIntent, CanonicalAction};
 use crate::models::{
-    ApprovalStatus, CommandSuggestion, ExecutionEvent, ExecutionEventKind, ExecutionOutcome,
-    ExecutionResult, HistoryEntry, MachineInfo, ParsedCommand, PermissionStatus,
+    ApprovalStatus, CommandSuggestion, ExecutionOutcome, ExecutionResult, HistoryEntry,
+    InterpretationDecision, MachineInfo, ParsedCommand, PermissionStatus,
 };
+#[cfg(debug_assertions)]
+use crate::models::{ExecutionEvent, ExecutionEventKind};
 use crate::provider_keys::ProviderKeyStatus;
 use crate::{
-    arbiter, executor, history, interpret_local, machine, parser, permissions, provider_keys,
-    resolver, risk,
+    arbiter, executor, history, interpret_local, machine, parser, permissions,
+    provider_interpreter, provider_keys, resolver, risk,
 };
 use crate::{service_catalog, AppState, APP_CONFIG_MAX_HISTORY};
 
-fn interpreted_intent(input: &str) -> Option<parser::Intent> {
-    let candidates = interpret_local::interpret(input);
-    let arbitration = arbiter::decide(&candidates);
-    if arbitration.decision != arbiter::ArbitrationDecision::Execute {
-        return None;
-    }
-    let chosen = arbitration.chosen_index?;
-    let candidate = candidates.get(chosen)?;
-    intent_from_candidate(candidate)
+struct InterpretationSurface {
+    decision: Option<InterpretationDecision>,
+    chosen_intent: Option<parser::Intent>,
+    clarification_message: Option<String>,
+    clarification_slots: Vec<String>,
+    choices: Vec<String>,
 }
 
-fn interpretation_clarification_message(input: &str) -> Option<String> {
-    let candidates = interpret_local::interpret(input);
-    let arbitration = arbiter::decide(&candidates);
+fn canonical_action_fallback(candidate: &CandidateIntent) -> Option<String> {
+    let label = match candidate.canonical_action {
+        CanonicalAction::OpenApp => "open app",
+        CanonicalAction::QuitApp => "close app",
+        CanonicalAction::OpenPath => "open path",
+        CanonicalAction::CreateFolder => "create folder",
+        CanonicalAction::MovePath => "move path",
+        CanonicalAction::OpenService => "open service",
+        CanonicalAction::BrowserNewTab => "open new tab",
+        CanonicalAction::BrowserCloseTab => "close tab",
+        CanonicalAction::BrowserReopenClosedTab => "reopen closed tab",
+        CanonicalAction::BrightnessUp => "increase brightness",
+        CanonicalAction::BrightnessDown => "decrease brightness",
+        CanonicalAction::TrashPath => "trash path",
+        CanonicalAction::Unknown => return None,
+    };
+    Some(label.to_string())
+}
+
+fn arbitration_decision(decision: &arbiter::ArbitrationDecision) -> InterpretationDecision {
+    match decision {
+        arbiter::ArbitrationDecision::Execute => InterpretationDecision::Execute,
+        arbiter::ArbitrationDecision::Clarify => InterpretationDecision::Clarify,
+        arbiter::ArbitrationDecision::OfferChoices => InterpretationDecision::OfferChoices,
+        arbiter::ArbitrationDecision::Deny => InterpretationDecision::Deny,
+    }
+}
+
+fn candidate_choice(candidate: &CandidateIntent) -> Option<String> {
+    intent_from_candidate(candidate)
+        .map(|intent| intent_canonical(&intent))
+        .or_else(|| canonical_action_fallback(candidate))
+}
+
+fn interpretation_surface_from_candidates(
+    candidates: &[CandidateIntent],
+    arbitration: &arbiter::ArbitrationResult,
+) -> InterpretationSurface {
+    let chosen_intent = if arbitration.decision == arbiter::ArbitrationDecision::Execute {
+        arbitration
+            .chosen_index
+            .and_then(|index| candidates.get(index))
+            .and_then(intent_from_candidate)
+    } else {
+        None
+    };
+
+    let mut clarification_slots = Vec::new();
+    let mut clarification_message = None;
+    let mut choices = Vec::new();
 
     match arbitration.decision {
         arbiter::ArbitrationDecision::Clarify => {
-            let chosen = arbitration.chosen_index?;
-            let candidate = candidates.get(chosen)?;
-            if !candidate.missing_slots.is_empty() {
-                return Some(format!(
-                    "Need more detail: {}.",
-                    candidate
-                        .missing_slots
-                        .iter()
-                        .map(|slot| slot.replace('_', " "))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
+            if let Some(chosen) = arbitration
+                .chosen_index
+                .and_then(|index| candidates.get(index))
+            {
+                clarification_slots = chosen.missing_slots.clone();
+                if !clarification_slots.is_empty() {
+                    clarification_message = Some(format!(
+                        "Need more detail: {}.",
+                        clarification_slots
+                            .iter()
+                            .map(|slot| slot.replace('_', " "))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
             }
-            Some(arbitration.explanation)
+            if clarification_message.is_none() {
+                clarification_message = Some(arbitration.explanation.clone());
+            }
         }
         arbiter::ArbitrationDecision::OfferChoices => {
-            Some("Multiple actions look plausible. Add a bit more detail.".to_string())
+            clarification_message =
+                Some("Multiple actions look plausible. Pick one to continue.".to_string());
+            for candidate in candidates.iter().take(4) {
+                let Some(choice) = candidate_choice(candidate) else {
+                    continue;
+                };
+                if choices.iter().any(|existing| existing == &choice) {
+                    continue;
+                }
+                choices.push(choice);
+                if choices.len() >= 3 {
+                    break;
+                }
+            }
         }
-        _ => None,
+        _ => {}
+    }
+
+    InterpretationSurface {
+        decision: Some(arbitration_decision(&arbitration.decision)),
+        chosen_intent,
+        clarification_message,
+        clarification_slots,
+        choices,
+    }
+}
+
+fn local_interpretation_surface(input: &str) -> InterpretationSurface {
+    let candidates = interpret_local::interpret(input);
+    let arbitration = arbiter::decide(&candidates);
+    interpretation_surface_from_candidates(&candidates, &arbitration)
+}
+
+async fn provider_interpretation_surface(
+    input: &str,
+    machine: &MachineInfo,
+) -> Result<InterpretationSurface, AppError> {
+    let candidates = provider_interpreter::interpret(input, machine).await?;
+    let arbitration = arbiter::decide(&candidates);
+    Ok(interpretation_surface_from_candidates(
+        &candidates,
+        &arbitration,
+    ))
+}
+
+fn surface_has_guidance(surface: &InterpretationSurface) -> bool {
+    !surface.clarification_slots.is_empty()
+        || !surface.choices.is_empty()
+        || surface.clarification_message.is_some()
+}
+
+fn should_attempt_provider(command: &ParsedCommand, local_surface: &InterpretationSurface) -> bool {
+    command.routes.is_empty()
+        && local_surface.clarification_slots.is_empty()
+        && local_surface.choices.is_empty()
+}
+
+fn apply_surface_fields(command: &mut ParsedCommand, surface: &InterpretationSurface) {
+    command.interpretation_decision = surface.decision.clone();
+    command.clarification_message = surface.clarification_message.clone();
+    command.clarification_slots = surface.clarification_slots.clone();
+    command.choices = surface.choices.clone();
+    if command.clarification_message.is_some() {
+        command.unresolved_message = command.clarification_message.clone();
+    }
+}
+
+fn append_provider_hint(command: &mut ParsedCommand) {
+    let hint = "Link a provider in the engine panel for broader interpretation.";
+    match command.unresolved_message.as_deref() {
+        Some(existing) if existing.contains(hint) => {}
+        Some(existing) if !existing.trim().is_empty() => {
+            command.unresolved_message = Some(format!("{existing} {hint}"));
+        }
+        _ => {
+            command.unresolved_message = Some(hint.to_string());
+        }
     }
 }
 
@@ -325,7 +453,7 @@ fn suggestion_intents(input: &str, machine: &MachineInfo) -> Vec<parser::Intent>
         return intents;
     }
 
-    if let Some(intent) = interpreted_intent(input) {
+    if let Some(intent) = local_interpretation_surface(input).chosen_intent {
         push_intent_if_new(&mut intents, intent);
     }
 
@@ -442,6 +570,10 @@ pub async fn suggest_commands(
             approval_status: ApprovalStatus::NotRequired,
             unresolved_code: None,
             unresolved_message: None,
+            interpretation_decision: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
         });
 
         let detail = if annotated.requires_approval {
@@ -481,11 +613,14 @@ pub async fn parse_command(
     input: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<ParsedCommand, String> {
+    let machine_info = machine_snapshot(&state)?;
     let normalized = parser::normalize(&input);
     let parsed_intent = parser::parse_intent(&input);
-    let intent = interpreted_intent(&input).unwrap_or_else(|| parsed_intent.clone());
-
-    let machine_info = machine_snapshot(&state)?;
+    let local_surface = local_interpretation_surface(&input);
+    let intent = local_surface
+        .chosen_intent
+        .clone()
+        .unwrap_or_else(|| parsed_intent.clone());
 
     let (kind, routes, unresolved_code, unresolved_message) =
         resolver::resolve(&intent, &machine_info);
@@ -501,11 +636,52 @@ pub async fn parse_command(
         approval_status: ApprovalStatus::NotRequired,
         unresolved_code,
         unresolved_message,
+        interpretation_decision: local_surface.decision.clone(),
+        clarification_message: local_surface.clarification_message.clone(),
+        clarification_slots: local_surface.clarification_slots.clone(),
+        choices: local_surface.choices.clone(),
     };
 
-    if cmd.routes.is_empty() && matches!(parsed_intent, parser::Intent::Unknown(_)) {
-        if let Some(clarify) = interpretation_clarification_message(&cmd.raw_input) {
-            cmd.unresolved_message = Some(clarify);
+    if cmd.clarification_message.is_some() {
+        cmd.unresolved_message = cmd.clarification_message.clone();
+    } else if cmd.routes.is_empty()
+        && matches!(parsed_intent, parser::Intent::Unknown(_))
+        && matches!(
+            cmd.interpretation_decision,
+            Some(InterpretationDecision::OfferChoices)
+        )
+        && !cmd.choices.is_empty()
+    {
+        cmd.unresolved_message = Some("Multiple actions look plausible.".to_string());
+    }
+
+    if should_attempt_provider(&cmd, &local_surface) {
+        match provider_interpretation_surface(&cmd.raw_input, &machine_info).await {
+            Ok(provider_surface) => {
+                if let Some(provider_intent) = provider_surface.chosen_intent.clone() {
+                    let (
+                        provider_kind,
+                        provider_routes,
+                        provider_unresolved_code,
+                        provider_unresolved_message,
+                    ) = resolver::resolve(&provider_intent, &machine_info);
+                    if !provider_routes.is_empty() || surface_has_guidance(&provider_surface) {
+                        cmd.kind = provider_kind;
+                        cmd.routes = provider_routes;
+                        cmd.unresolved_code = provider_unresolved_code;
+                        cmd.unresolved_message = provider_unresolved_message;
+                        apply_surface_fields(&mut cmd, &provider_surface);
+                    }
+                } else if surface_has_guidance(&provider_surface) {
+                    apply_surface_fields(&mut cmd, &provider_surface);
+                }
+            }
+            Err(AppError::NotFound(_)) => {
+                append_provider_hint(&mut cmd);
+            }
+            Err(err) => {
+                log::warn!("provider interpretation unavailable: {err}");
+            }
         }
     }
 
@@ -678,6 +854,10 @@ pub async fn undo_last(
         approval_status: ApprovalStatus::NotRequired,
         unresolved_code: None,
         unresolved_message: None,
+        interpretation_decision: None,
+        clarification_message: None,
+        clarification_slots: vec![],
+        choices: vec![],
     };
 
     let run = executor::execute(&undo_cmd, 0, &app).map_err(|e| e.to_string())?;
@@ -795,7 +975,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::intent_language::{ExecutorFamily, IntentFamily, InterpretationSource};
-    use crate::models::RiskLevel;
+    use crate::models::{InterpretationDecision, RiskLevel};
 
     fn candidate(action: CanonicalAction, slots: &[(&str, &str)]) -> CandidateIntent {
         let slot_map = slots
@@ -814,6 +994,21 @@ mod tests {
             executor_family: ExecutorFamily::Unknown,
             source: InterpretationSource::LocalPattern,
         }
+    }
+
+    fn candidate_with_shape(
+        family: IntentFamily,
+        action: CanonicalAction,
+        slots: &[(&str, &str)],
+        missing_slots: &[&str],
+        confidence: f32,
+    ) -> CandidateIntent {
+        let mut c = candidate(action, slots);
+        c.family = family;
+        c.missing_slots = missing_slots.iter().map(|slot| slot.to_string()).collect();
+        c.clarification_needed = !c.missing_slots.is_empty();
+        c.confidence = confidence;
+        c
     }
 
     #[test]
@@ -867,5 +1062,105 @@ mod tests {
             intent_from_candidate(&c),
             Some(parser::Intent::TrashPath("~/Desktop/test.txt".to_string()))
         );
+    }
+
+    #[test]
+    fn clarify_surface_exposes_missing_slots() {
+        let candidates = vec![candidate_with_shape(
+            IntentFamily::AppOpen,
+            CanonicalAction::OpenApp,
+            &[],
+            &["app"],
+            0.55,
+        )];
+        let arbitration = arbiter::decide(&candidates);
+        let surface = interpretation_surface_from_candidates(&candidates, &arbitration);
+        assert_eq!(surface.decision, Some(InterpretationDecision::Clarify));
+        assert_eq!(surface.clarification_slots, vec!["app".to_string()]);
+        assert!(!surface
+            .clarification_message
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty());
+    }
+
+    #[test]
+    fn offer_choices_surface_exposes_compact_choices() {
+        let candidates = vec![
+            candidate_with_shape(
+                IntentFamily::AppOpen,
+                CanonicalAction::OpenApp,
+                &[("app", "safari")],
+                &[],
+                0.90,
+            ),
+            candidate_with_shape(
+                IntentFamily::ServiceOpen,
+                CanonicalAction::OpenService,
+                &[("service", "youtube")],
+                &[],
+                0.86,
+            ),
+        ];
+        let arbitration = arbiter::decide(&candidates);
+        let surface = interpretation_surface_from_candidates(&candidates, &arbitration);
+        assert_eq!(surface.decision, Some(InterpretationDecision::OfferChoices));
+        assert!(surface.choices.len() >= 2);
+    }
+
+    #[test]
+    fn provider_attempts_only_when_local_path_is_still_dead_end() {
+        let local_surface = InterpretationSurface {
+            decision: Some(InterpretationDecision::Deny),
+            chosen_intent: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
+        };
+        let command = ParsedCommand {
+            id: "test".to_string(),
+            raw_input: "do the thing".to_string(),
+            normalized: "do the thing".to_string(),
+            kind: crate::models::CommandKind::Unknown,
+            routes: vec![],
+            risk: RiskLevel::R0,
+            requires_approval: false,
+            approval_status: ApprovalStatus::NotRequired,
+            unresolved_code: None,
+            unresolved_message: None,
+            interpretation_decision: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
+        };
+        assert!(should_attempt_provider(&command, &local_surface));
+    }
+
+    #[test]
+    fn provider_does_not_override_missing_slot_clarification() {
+        let local_surface = InterpretationSurface {
+            decision: Some(InterpretationDecision::Clarify),
+            chosen_intent: None,
+            clarification_message: Some("Need more detail: app.".to_string()),
+            clarification_slots: vec!["app".to_string()],
+            choices: vec![],
+        };
+        let command = ParsedCommand {
+            id: "test".to_string(),
+            raw_input: "open".to_string(),
+            normalized: "open".to_string(),
+            kind: crate::models::CommandKind::Unknown,
+            routes: vec![],
+            risk: RiskLevel::R0,
+            requires_approval: false,
+            approval_status: ApprovalStatus::NotRequired,
+            unresolved_code: None,
+            unresolved_message: None,
+            interpretation_decision: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
+        };
+        assert!(!should_attempt_provider(&command, &local_surface));
     }
 }

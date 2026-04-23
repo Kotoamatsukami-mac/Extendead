@@ -159,6 +159,14 @@ pub fn all_actions() -> &'static [ActionDefinition] {
     ACTIONS
 }
 
+pub fn action_for_canonical_action(
+    canonical_action: CanonicalAction,
+) -> Option<&'static ActionDefinition> {
+    ACTIONS
+        .iter()
+        .find(|action| action.canonical_action == canonical_action)
+}
+
 pub fn actions_for_surface_token(token: &str) -> Vec<&'static ActionDefinition> {
     let normalized = token.trim().to_lowercase();
     ACTIONS

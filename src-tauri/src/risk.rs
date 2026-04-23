@@ -151,6 +151,10 @@ mod tests {
             approval_status: ApprovalStatus::NotRequired,
             unresolved_code: None,
             unresolved_message: None,
+            interpretation_decision: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
         }
     }
 

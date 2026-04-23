@@ -7,7 +7,19 @@ interface LoungeStripProps {
   inputValue: string;
   prediction: string;
   suggestions: CommandSuggestion[];
-  execState: 'idle' | 'parsing' | 'awaiting_route' | 'awaiting_confirm' | 'executing' | 'done' | 'error';
+  clarificationMessage?: string | null;
+  clarificationSlots?: string[];
+  choices?: string[];
+  execState:
+    | 'idle'
+    | 'parsing'
+    | 'awaiting_clarify'
+    | 'awaiting_choice'
+    | 'awaiting_route'
+    | 'awaiting_confirm'
+    | 'executing'
+    | 'done'
+    | 'error';
   alwaysOnTop: boolean;
   focusTrigger: number;
   resultFeedback?: ResultFeedback | null;
@@ -16,6 +28,7 @@ interface LoungeStripProps {
   onSubmit: (value: string) => void;
   onAcceptPrediction: () => void;
   onApplySuggestion: (value: string) => void;
+  onSelectChoice: (value: string) => void;
   onEscape: () => void;
   onToggleAlwaysOnTop: () => void;
   onOpenEngineLink?: () => void;
@@ -25,6 +38,9 @@ export function LoungeStrip({
   inputValue,
   prediction,
   suggestions,
+  clarificationMessage,
+  clarificationSlots = [],
+  choices = [],
   execState,
   alwaysOnTop,
   focusTrigger,
@@ -34,6 +50,7 @@ export function LoungeStrip({
   onSubmit,
   onAcceptPrediction,
   onApplySuggestion,
+  onSelectChoice,
   onEscape,
   onToggleAlwaysOnTop,
   onOpenEngineLink,
@@ -53,6 +70,8 @@ export function LoungeStrip({
   const isLoading = execState === 'parsing' || execState === 'executing';
   const isDone = execState === 'done';
   const isError = execState === 'error';
+  const isAwaitingClarify = execState === 'awaiting_clarify';
+  const isAwaitingChoice = execState === 'awaiting_choice';
 
   const normalizedInputValue = inputValue.toLowerCase();
   const normalizedPrediction = prediction.toLowerCase();
@@ -61,7 +80,9 @@ export function LoungeStrip({
   );
   const predictionTail = hasPredictionPrefix ? prediction.slice(inputValue.length) : '';
   const showPrediction = predictionTail.length > 0 && !resultFeedback;
-  const showSuggestions = suggestions.length > 0 && !resultFeedback && !isLoading;
+  const showSuggestions = suggestions.length > 0 && !resultFeedback && !isLoading && !isAwaitingClarify && !isAwaitingChoice;
+  const showChoices = choices.length > 0 && !resultFeedback && isAwaitingChoice;
+  const showClarify = isAwaitingClarify && !resultFeedback;
 
   function applySelectedSuggestion() {
     const suggestion = suggestions[selectedSuggestionIndex];
@@ -116,6 +137,10 @@ export function LoungeStrip({
       ? 'reading intent…'
       : execState === 'executing'
         ? 'running sequence…'
+        : execState === 'awaiting_clarify'
+          ? 'add the missing detail…'
+          : execState === 'awaiting_choice'
+            ? 'choose an action or refine…'
         : 'tell extendead what to do';
 
   const stateClass = [
@@ -125,6 +150,8 @@ export function LoungeStrip({
     !isActive ? 'lounge-strip--ready' : '',
     isDone ? 'lounge-strip--done' : '',
     isError ? 'lounge-strip--error' : '',
+    isAwaitingClarify ? 'lounge-strip--clarify' : '',
+    isAwaitingChoice ? 'lounge-strip--choice' : '',
     embedded ? 'lounge-strip--embedded' : '',
   ].filter(Boolean).join(' ');
 
@@ -181,6 +208,37 @@ export function LoungeStrip({
                   ))}
                 </div>
               )}
+
+              {showChoices && (
+                <div className="lounge-strip__choices" role="group" aria-label="Choose an action">
+                  {choices.map((choice) => (
+                    <button
+                      key={choice}
+                      type="button"
+                      className="lounge-strip__choice"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        onSelectChoice(choice);
+                      }}
+                    >
+                      {choice}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {showClarify && (
+                <div className="lounge-strip__clarify" role="status" aria-live="polite">
+                  <span className="lounge-strip__clarify-message">
+                    {clarificationMessage || 'Need one more detail before I can run this.'}
+                  </span>
+                  {clarificationSlots.length > 0 && (
+                    <span className="lounge-strip__clarify-slots">
+                      Needed: {clarificationSlots.map((slot) => slot.replace(/_/g, ' ')).join(', ')}
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -190,6 +248,8 @@ export function LoungeStrip({
             {alwaysOnTop ? 'Pinned' : 'Floating'}
           </span>
           {(showPrediction || showSuggestions) && <span className="lounge-strip__hint">tab</span>}
+          {showChoices && <span className="lounge-strip__hint">pick</span>}
+          {showClarify && <span className="lounge-strip__hint">clarify</span>}
 
           {onOpenEngineLink && (
             <button

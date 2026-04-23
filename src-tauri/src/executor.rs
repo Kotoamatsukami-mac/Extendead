@@ -7,8 +7,10 @@ use crate::errors::AppError;
 use crate::events::{ExecutionEventPayload, EXECUTION_EVENT_NAME};
 use crate::models::{
     ExecutionEvent, ExecutionEventKind, ExecutionOutcome, ExecutionResult, ParsedCommand,
-    ResolvedAction,
+    PermState, PermissionStatus, ResolvedAction,
 };
+use crate::path_policy;
+use crate::permissions;
 use crate::risk;
 use crate::validator;
 
@@ -37,6 +39,13 @@ pub struct ExecutionRun {
     pub events: Vec<ExecutionEvent>,
 }
 
+enum AppleScriptPermissionProfile {
+    Volume,
+    BrowserTab,
+    Brightness,
+    Other,
+}
+
 fn outcome_for_error(e: &AppError) -> ExecutionOutcome {
     match e {
         AppError::PermissionDenied(_) => ExecutionOutcome::Blocked,
@@ -55,6 +64,60 @@ fn human_message_for_error(e: &AppError) -> String {
         AppError::ValidationError(detail) => format!("✗ Blocked: {detail}"),
         _ => format!("✗ {e}"),
     }
+}
+
+fn applescript_permission_profile(template_id: &str) -> AppleScriptPermissionProfile {
+    match template_id {
+        "mute_volume" | "unmute_volume" | "set_volume" | "get_volume" => {
+            AppleScriptPermissionProfile::Volume
+        }
+        "browser_new_tab" | "browser_close_tab" | "browser_reopen_closed_tab" => {
+            AppleScriptPermissionProfile::BrowserTab
+        }
+        "brightness_up" | "brightness_down" => AppleScriptPermissionProfile::Brightness,
+        _ => AppleScriptPermissionProfile::Other,
+    }
+}
+
+fn preflight_applescript_template(template_id: &str) -> Result<(), AppError> {
+    let status = permissions::get_permission_status();
+    preflight_applescript_template_for_status(template_id, &status)
+}
+
+fn preflight_applescript_template_for_status(
+    template_id: &str,
+    status: &PermissionStatus,
+) -> Result<(), AppError> {
+    match applescript_permission_profile(template_id) {
+        AppleScriptPermissionProfile::Volume => {
+            if status.apple_events == PermState::Denied {
+                return Err(AppError::PermissionDenied(
+                    "Automation permission is required for volume control. Grant Extendead access in System Settings -> Privacy & Security -> Automation.".to_string(),
+                ));
+            }
+        }
+        AppleScriptPermissionProfile::BrowserTab => {
+            if status.accessibility == PermState::Denied {
+                return Err(AppError::PermissionDenied(
+                    "Accessibility permission is required for browser tab shortcuts. Grant Extendead access in System Settings -> Privacy & Security -> Accessibility.".to_string(),
+                ));
+            }
+            if status.apple_events == PermState::Denied {
+                return Err(AppError::PermissionDenied(
+                    "Automation permission is required to control browser tabs. Grant Extendead access in System Settings -> Privacy & Security -> Automation.".to_string(),
+                ));
+            }
+        }
+        AppleScriptPermissionProfile::Brightness => {
+            if status.accessibility == PermState::Denied {
+                return Err(AppError::PermissionDenied(
+                    "Accessibility permission is required for brightness shortcuts. Grant Extendead access in System Settings -> Privacy & Security -> Accessibility.".to_string(),
+                ));
+            }
+        }
+        AppleScriptPermissionProfile::Other => {}
+    }
+    Ok(())
 }
 
 pub fn execute<R: Runtime>(
@@ -200,6 +263,7 @@ fn dispatch_action<R: Runtime>(
             script,
             template_id,
         } => {
+            preflight_applescript_template(template_id)?;
             let progress_msg = match template_id.as_str() {
                 "mute_volume" => "Muting system audio output".to_string(),
                 "unmute_volume" => "Unmuting system audio output".to_string(),
@@ -392,8 +456,11 @@ fn create_folder(path: &str) -> Result<String, AppError> {
 }
 
 fn move_path(source_path: &str, destination_path: &str) -> Result<String, AppError> {
-    if let Some(parent) = std::path::Path::new(destination_path).parent() {
-        if destination_path.contains("/.Trash/") {
+    let destination_is_trash = path_policy::destination_is_home_trash(destination_path)
+        .map_err(|e| AppError::ExecutionError(format!("trash boundary check failed: {e}")))?;
+
+    if destination_is_trash {
+        if let Some(parent) = std::path::Path::new(destination_path).parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
                 AppError::ExecutionError(format!("prepare trash destination failed: {e}"))
             })?;
@@ -403,4 +470,71 @@ fn move_path(source_path: &str, destination_path: &str) -> Result<String, AppErr
     std::fs::rename(source_path, destination_path)
         .map_err(|e| AppError::ExecutionError(format!("move failed: {e}")))?;
     Ok(format!("Moved {source_path} to {destination_path}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn denied_permissions() -> PermissionStatus {
+        PermissionStatus {
+            accessibility: PermState::Denied,
+            apple_events: PermState::Denied,
+        }
+    }
+
+    fn granted_permissions() -> PermissionStatus {
+        PermissionStatus {
+            accessibility: PermState::Granted,
+            apple_events: PermState::Granted,
+        }
+    }
+
+    #[test]
+    fn blocks_browser_tab_when_accessibility_is_denied() {
+        let status = PermissionStatus {
+            accessibility: PermState::Denied,
+            apple_events: PermState::Granted,
+        };
+        let err =
+            preflight_applescript_template_for_status("browser_new_tab", &status).unwrap_err();
+        assert!(matches!(err, AppError::PermissionDenied(_)));
+    }
+
+    #[test]
+    fn blocks_brightness_when_accessibility_is_denied() {
+        let status = PermissionStatus {
+            accessibility: PermState::Denied,
+            apple_events: PermState::Granted,
+        };
+        let err = preflight_applescript_template_for_status("brightness_up", &status).unwrap_err();
+        assert!(matches!(err, AppError::PermissionDenied(_)));
+    }
+
+    #[test]
+    fn blocks_volume_when_automation_is_denied() {
+        let status = PermissionStatus {
+            accessibility: PermState::Granted,
+            apple_events: PermState::Denied,
+        };
+        let err = preflight_applescript_template_for_status("set_volume", &status).unwrap_err();
+        assert!(matches!(err, AppError::PermissionDenied(_)));
+    }
+
+    #[test]
+    fn allows_templates_when_required_permissions_are_granted() {
+        let status = granted_permissions();
+        assert!(preflight_applescript_template_for_status("browser_close_tab", &status).is_ok());
+        assert!(preflight_applescript_template_for_status("brightness_down", &status).is_ok());
+        assert!(preflight_applescript_template_for_status("mute_volume", &status).is_ok());
+    }
+
+    #[test]
+    fn other_templates_do_not_require_permission_preflight() {
+        assert!(preflight_applescript_template_for_status(
+            "future_template",
+            &denied_permissions()
+        )
+        .is_ok());
+    }
 }

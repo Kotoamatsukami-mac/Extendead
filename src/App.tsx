@@ -18,6 +18,8 @@ type AppMode = 'lounge' | 'expanded';
 type ExecState =
   | 'idle'
   | 'parsing'
+  | 'awaiting_clarify'
+  | 'awaiting_choice'
   | 'awaiting_route'
   | 'awaiting_confirm'
   | 'executing'
@@ -94,6 +96,20 @@ export function App() {
     },
     onParsed: (cmd) => {
       setParsedCommand(cmd);
+
+      if (cmd.interpretation_decision === 'clarify') {
+        setMode('lounge');
+        setSelectedRouteIndex(null);
+        setExecState('awaiting_clarify');
+        return;
+      }
+
+      if (cmd.interpretation_decision === 'offer_choices' && (cmd.choices?.length ?? 0) > 0) {
+        setMode('lounge');
+        setSelectedRouteIndex(null);
+        setExecState('awaiting_choice');
+        return;
+      }
 
       if (cmd.routes.length === 0) {
         setExecState('error');
@@ -255,6 +271,13 @@ export function App() {
     setInputValue(value);
   }, []);
 
+  const handleSelectChoice = useCallback((value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setInputValue('');
+    bridge.parseCommand(trimmed);
+  }, [bridge]);
+
   const handleSelectRoute = useCallback(
     (index: number) => {
       setSelectedRouteIndex(index);
@@ -413,6 +436,13 @@ export function App() {
         inputValue={inputValue}
         prediction={prediction}
         suggestions={suggestions}
+        clarificationMessage={
+          execState === 'awaiting_clarify'
+            ? (parsedCommand?.clarification_message ?? parsedCommand?.unresolved_message ?? null)
+            : null
+        }
+        clarificationSlots={execState === 'awaiting_clarify' ? (parsedCommand?.clarification_slots ?? []) : []}
+        choices={execState === 'awaiting_choice' ? (parsedCommand?.choices ?? []) : []}
         execState={execState}
         alwaysOnTop={alwaysOnTop}
         focusTrigger={focusTrigger}
@@ -422,6 +452,7 @@ export function App() {
         onSubmit={handleSubmit}
         onAcceptPrediction={handleAcceptPrediction}
         onApplySuggestion={handleApplySuggestion}
+        onSelectChoice={handleSelectChoice}
         onEscape={handleCollapse}
         onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}

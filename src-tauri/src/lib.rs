@@ -18,12 +18,15 @@ pub mod interpret_local;
 pub mod machine;
 pub mod models;
 pub mod parser;
+pub mod path_policy;
 pub mod permissions;
 pub mod planner;
+pub mod provider_interpreter;
 pub mod provider_keys;
 pub mod resolver;
 pub mod risk;
 pub mod service_catalog;
+// Future-facing stub. Keep isolated from active execution paths.
 pub mod ui_automation;
 pub mod validator;
 
@@ -39,6 +42,53 @@ pub struct AppStateInner {
     pub history: Vec<HistoryEntry>,
 }
 
+#[cfg(all(test, debug_assertions))]
+fn invoke_command_names() -> &'static [&'static str] {
+    &[
+        "parse_command",
+        "suggest_commands",
+        "execute_command",
+        "approve_command",
+        "deny_command",
+        "get_machine_info",
+        "get_permission_status",
+        "get_app_config",
+        "get_history",
+        "get_service_catalog",
+        "undo_last",
+        "set_window_mode",
+        "toggle_always_on_top",
+        "refresh_machine_info",
+        "get_provider_key_status",
+        "set_provider_key",
+        "delete_provider_key",
+        "debug_interpret_local",
+    ]
+}
+
+#[cfg(all(test, not(debug_assertions)))]
+fn invoke_command_names() -> &'static [&'static str] {
+    &[
+        "parse_command",
+        "suggest_commands",
+        "execute_command",
+        "approve_command",
+        "deny_command",
+        "get_machine_info",
+        "get_permission_status",
+        "get_app_config",
+        "get_history",
+        "get_service_catalog",
+        "undo_last",
+        "set_window_mode",
+        "toggle_always_on_top",
+        "refresh_machine_info",
+        "get_provider_key_status",
+        "set_provider_key",
+        "delete_provider_key",
+    ]
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -51,7 +101,7 @@ pub fn run() {
         }),
     };
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(
@@ -96,27 +146,63 @@ pub fn run() {
                 .unwrap_or_else(|e| log::warn!("Could not register global shortcut: {e}"));
 
             Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            commands::parse_command,
-            commands::suggest_commands,
-            commands::execute_command,
-            commands::approve_command,
-            commands::deny_command,
-            commands::get_machine_info,
-            commands::get_permission_status,
-            commands::get_app_config,
-            commands::get_history,
-            commands::get_service_catalog,
-            commands::undo_last,
-            commands::set_window_mode,
-            commands::toggle_always_on_top,
-            commands::refresh_machine_info,
-            commands::get_provider_key_status,
-            commands::set_provider_key,
-            commands::delete_provider_key,
-            interpret_commands::debug_interpret_local,
-        ])
+        });
+
+    #[cfg(debug_assertions)]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::parse_command,
+        commands::suggest_commands,
+        commands::execute_command,
+        commands::approve_command,
+        commands::deny_command,
+        commands::get_machine_info,
+        commands::get_permission_status,
+        commands::get_app_config,
+        commands::get_history,
+        commands::get_service_catalog,
+        commands::undo_last,
+        commands::set_window_mode,
+        commands::toggle_always_on_top,
+        commands::refresh_machine_info,
+        commands::get_provider_key_status,
+        commands::set_provider_key,
+        commands::delete_provider_key,
+        interpret_commands::debug_interpret_local,
+    ]);
+
+    #[cfg(not(debug_assertions))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::parse_command,
+        commands::suggest_commands,
+        commands::execute_command,
+        commands::approve_command,
+        commands::deny_command,
+        commands::get_machine_info,
+        commands::get_permission_status,
+        commands::get_app_config,
+        commands::get_history,
+        commands::get_service_catalog,
+        commands::undo_last,
+        commands::set_window_mode,
+        commands::toggle_always_on_top,
+        commands::refresh_machine_info,
+        commands::get_provider_key_status,
+        commands::set_provider_key,
+        commands::delete_provider_key,
+    ]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::invoke_command_names;
+
+    #[test]
+    fn debug_interpret_exposure_matches_build_mode() {
+        let has_debug_interpret = invoke_command_names().contains(&"debug_interpret_local");
+        assert_eq!(has_debug_interpret, cfg!(debug_assertions));
+    }
 }

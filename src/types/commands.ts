@@ -37,6 +37,8 @@ export type ExecutionOutcome =
   | 'timed_out'
   | 'partial_success';
 
+export type InterpretationDecision = 'execute' | 'clarify' | 'offer_choices' | 'deny';
+
 export interface OpenUrlAction {
   type: 'open_url';
   url: string;
@@ -110,6 +112,10 @@ export interface ParsedCommand {
   approval_status: ApprovalStatus;
   unresolved_code?: UnresolvedCode | null;
   unresolved_message?: string | null;
+  interpretation_decision?: InterpretationDecision | null;
+  clarification_message?: string | null;
+  clarification_slots?: string[];
+  choices?: string[];
 }
 
 export interface ExecutionResult {

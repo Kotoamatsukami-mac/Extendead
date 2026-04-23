@@ -59,6 +59,15 @@ pub enum UnresolvedCode {
     PermanentDeleteBlocked,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InterpretationDecision {
+    Execute,
+    Clarify,
+    OfferChoices,
+    Deny,
+}
+
 // ── Execution outcome ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -131,6 +140,10 @@ pub struct ParsedCommand {
     pub approval_status: ApprovalStatus,
     pub unresolved_code: Option<UnresolvedCode>,
     pub unresolved_message: Option<String>,
+    pub interpretation_decision: Option<InterpretationDecision>,
+    pub clarification_message: Option<String>,
+    pub clarification_slots: Vec<String>,
+    pub choices: Vec<String>,
 }
 
 // ── Suggestion projection ────────────────────────────────────────────────────
