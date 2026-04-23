@@ -1,17 +1,31 @@
 /* ── Design tokens ────────────────────────────────────────────────────────── */
 
 :root {
-  --glass-bg: rgba(6, 6, 10, 0.92);
-  --glass-border: rgba(255, 255, 255, 0.07);
-  --text-primary: rgba(255, 255, 255, 0.93);
-  --text-secondary: rgba(255, 255, 255, 0.42);
-  --accent-r0: #22c55e;
-  --accent-r1: #eab308;
-  --accent-r2: #f97316;
-  --accent-r3: #ef4444;
-  --strip-height: 60px;
-  --strip-radius: 30px;
-  --expanded-radius: 20px;
+  --glass-bg: rgba(248, 250, 252, 0.86);
+  --glass-panel: rgba(255, 255, 255, 0.76);
+  --glass-panel-strong: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-border-strong: rgba(15, 23, 42, 0.14);
+  --hairline: rgba(15, 23, 42, 0.06);
+  --text-primary: rgba(15, 23, 42, 0.92);
+  --text-secondary: rgba(51, 65, 85, 0.58);
+  --text-muted: rgba(71, 85, 105, 0.42);
+  --accent-r0: #047857;
+  --accent-r1: #b7791f;
+  --accent-r2: #c2410c;
+  --accent-r3: #dc2626;
+  --accent-calm: #2563eb;
+  --accent-teal: #0891b2;
+  --strip-height: 56px;
+  --strip-radius: 28px;
+  --expanded-radius: 22px;
+  --shadow-panel:
+    0 22px 58px rgba(15, 23, 42, 0.18),
+    0 8px 22px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.86) inset;
+  --shadow-float:
+    0 18px 42px rgba(15, 23, 42, 0.14),
+    0 5px 16px rgba(15, 23, 42, 0.08);
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Mono', monospace;
 }
@@ -54,24 +68,37 @@ button {
   width: 100%;
   height: 100%;
   display: flex;
-  flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  padding: 0;
+  padding: 8px 10px;
+  background: transparent;
 }
 
 .app--lounge {
   justify-content: center;
 }
 
-.app--expanded {
-  background: var(--glass-bg);
+.app__surface {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  -webkit-app-region: drag;
+}
+
+.app--expanded .app__surface {
+  justify-content: flex-start;
+  overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: var(--expanded-radius);
-  box-shadow:
-    0 8px 48px rgba(0, 0, 0, 0.7),
-    0 1px 0 rgba(255, 255, 255, 0.03) inset;
-  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 249, 0.78)),
+    var(--glass-bg);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(28px) saturate(1.22);
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
@@ -85,6 +112,6 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 2px;
+  background: rgba(15, 23, 42, 0.16);
+  border-radius: 999px;
 }

@@ -878,19 +878,18 @@ pub async fn undo_last(
 
 #[tauri::command]
 pub async fn set_window_mode(mode: String, window: tauri::WebviewWindow) -> Result<(), String> {
-    match mode.as_str() {
-        "lounge" => {
-            window
-                .set_size(tauri::LogicalSize::new(760.0_f64, 60.0_f64))
-                .map_err(|e| e.to_string())?;
-        }
-        "expanded" => {
-            window
-                .set_size(tauri::LogicalSize::new(760.0_f64, 420.0_f64))
-                .map_err(|e| e.to_string())?;
-        }
+    let (width, height) = match mode.as_str() {
+        "lounge" => (800.0_f64, 76.0_f64),
+        "expanded" => (800.0_f64, 456.0_f64),
         _ => return Err(format!("unknown window mode: {mode}")),
-    }
+    };
+
+    window.set_decorations(false).map_err(|e| e.to_string())?;
+    window.set_shadow(false).map_err(|e| e.to_string())?;
+    window
+        .set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 
@@ -904,6 +903,7 @@ pub async fn toggle_always_on_top(
     window
         .set_always_on_top(enabled)
         .map_err(|e| e.to_string())?;
+    window.set_shadow(false).map_err(|e| e.to_string())?;
 
     // Persist preference so it survives restarts.
     let mut config = crate::config::load_config();

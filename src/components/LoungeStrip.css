@@ -1,4 +1,4 @@
-/* ── Lounge strip — premium operator shell ─────────────────────────────────── */
+/* ── Lounge strip: light desktop helper ───────────────────────────────────── */
 
 .lounge-strip {
   position: relative;
@@ -6,16 +6,18 @@
   height: var(--strip-height);
   display: flex;
   align-items: center;
-  background: var(--glass-bg);
+  overflow: visible;
   border: 1px solid var(--glass-border);
   border-radius: var(--strip-radius);
-  overflow: visible;
-  box-shadow:
-    0 4px 32px rgba(0, 0, 0, 0.55),
-    0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.78)),
+    var(--glass-bg);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(24px) saturate(1.18);
   transition:
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -23,127 +25,39 @@
 .lounge-strip::before {
   content: '';
   position: absolute;
-  inset: -1px;
-  border-radius: var(--strip-radius);
-  background: conic-gradient(
-    from 0deg,
-    #6d28d9,
-    #4338ca,
-    #1e40af,
-    #0891b2,
-    #4338ca,
-    #6d28d9
-  );
-  opacity: 0;
-  z-index: 0;
-  transition: opacity 0.4s ease;
-  animation: spectral-drift 8s linear infinite;
+  inset: 1px;
+  border-radius: calc(var(--strip-radius) - 1px);
+  border: 1px solid rgba(255, 255, 255, 0.66);
   pointer-events: none;
 }
 
-.lounge-strip:hover::before {
-  opacity: 0.06;
-}
-
-.lounge-strip--ready:focus-within::before {
-  opacity: 0.12;
-}
-
-.lounge-strip--active::before {
-  opacity: 0.15;
-}
-
-.lounge-strip--loading::before {
-  opacity: 0.22;
-  animation: spectral-drift 4s linear infinite;
-}
-
-.lounge-strip--done::before {
-  opacity: 0.10;
-}
-
-.lounge-strip--clarify::before {
-  opacity: 0.12;
-}
-
-.lounge-strip--choice::before {
-  opacity: 0.14;
-}
-
-@keyframes spectral-drift {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-.lounge-strip--ready:focus-within {
-  border-color: rgba(255, 255, 255, 0.10);
+.lounge-strip--ready:focus-within,
+.lounge-strip:hover {
+  border-color: var(--glass-border-strong);
   box-shadow:
-    0 4px 32px rgba(0, 0, 0, 0.55),
-    0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 0 0 1px rgba(120, 80, 220, 0.08);
+    0 22px 52px rgba(15, 23, 42, 0.18),
+    0 7px 18px rgba(15, 23, 42, 0.09);
+}
+
+.lounge-strip--floating {
+  border-color: rgba(37, 99, 235, 0.18);
 }
 
 .lounge-strip--embedded {
-  background: transparent;
+  height: 58px;
   border: none;
-  border-bottom: 1px solid var(--glass-border);
   border-radius: 0;
+  background: rgba(255, 255, 255, 0.44);
   box-shadow: none;
+  backdrop-filter: blur(18px) saturate(1.12);
 }
 
 .lounge-strip--embedded::before {
-  display: none;
-}
-
-.lounge-strip--embedded .lounge-strip__body {
-  background: transparent;
-}
-
-.lounge-strip__marker {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  flex-shrink: 0;
-  margin-left: 16px;
-  background: rgba(255, 255, 255, 0.22);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-  transition:
-    background 0.25s ease,
-    box-shadow 0.25s ease;
-}
-
-.lounge-strip--active .lounge-strip__marker {
-  background: rgba(140, 100, 220, 0.5);
-  box-shadow: 0 0 0 1px rgba(140, 100, 220, 0.12) inset;
-}
-
-.lounge-strip--loading .lounge-strip__marker {
-  background: rgba(140, 100, 220, 0.6);
-  animation: marker-pulse 1.5s ease-in-out infinite;
-}
-
-.lounge-strip--done .lounge-strip__marker {
-  background: rgba(34, 197, 94, 0.6);
-  box-shadow: 0 0 4px rgba(34, 197, 94, 0.15);
-}
-
-.lounge-strip--error .lounge-strip__marker {
-  background: rgba(239, 68, 68, 0.5);
-}
-
-.lounge-strip--clarify .lounge-strip__marker {
-  background: rgba(251, 191, 36, 0.62);
-  box-shadow: 0 0 4px rgba(251, 191, 36, 0.18);
-}
-
-.lounge-strip--choice .lounge-strip__marker {
-  background: rgba(56, 189, 248, 0.62);
-  box-shadow: 0 0 4px rgba(56, 189, 248, 0.18);
-}
-
-@keyframes marker-pulse {
-  0%, 100% { opacity: 0.5; }
-  50%      { opacity: 1; }
+  inset: auto 14px 0;
+  height: 1px;
+  border: none;
+  border-radius: 0;
+  background: var(--hairline);
 }
 
 .lounge-strip__body {
@@ -151,13 +65,83 @@
   align-items: center;
   flex: 1;
   height: 100%;
-  padding: 0 14px 0 0;
+  min-width: 0;
   gap: 10px;
-  background: var(--glass-bg);
-  border-radius: var(--strip-radius);
+  padding: 0 10px 0 12px;
   position: relative;
   z-index: 1;
-  min-width: 0;
+  -webkit-app-region: drag;
+}
+
+.lounge-strip__drag-grip {
+  width: 16px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  cursor: grab;
+  opacity: 0.72;
+  -webkit-app-region: drag;
+}
+
+.lounge-strip__drag-grip:active {
+  cursor: grabbing;
+}
+
+.lounge-strip__drag-grip span {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(71, 85, 105, 0.34);
+}
+
+.lounge-strip__marker {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: rgba(71, 85, 105, 0.26);
+  box-shadow: 0 0 0 3px rgba(71, 85, 105, 0.06);
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.lounge-strip--active .lounge-strip__marker,
+.lounge-strip--loading .lounge-strip__marker {
+  background: var(--accent-calm);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.11);
+}
+
+.lounge-strip--loading .lounge-strip__marker {
+  animation: marker-pulse 1.35s ease-in-out infinite;
+}
+
+.lounge-strip--done .lounge-strip__marker {
+  background: var(--accent-r0);
+  box-shadow: 0 0 0 4px rgba(4, 120, 87, 0.10);
+}
+
+.lounge-strip--error .lounge-strip__marker {
+  background: var(--accent-r3);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.10);
+}
+
+.lounge-strip--clarify .lounge-strip__marker {
+  background: var(--accent-r1);
+  box-shadow: 0 0 0 4px rgba(183, 121, 31, 0.10);
+}
+
+.lounge-strip--choice .lounge-strip__marker {
+  background: var(--accent-teal);
+  box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.10);
+}
+
+@keyframes marker-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
 }
 
 .lounge-strip__input-shell {
@@ -177,8 +161,8 @@
   align-items: center;
   font-family: var(--font-mono);
   font-size: 14px;
-  font-weight: 400;
-  letter-spacing: 0.02em;
+  font-weight: 500;
+  letter-spacing: 0;
   pointer-events: none;
   white-space: pre;
 }
@@ -188,12 +172,12 @@
 }
 
 .lounge-strip__ghost-tail {
-  color: rgba(255, 255, 255, 0.15);
-  transition: color 0.2s ease;
+  color: rgba(71, 85, 105, 0.28);
+  transition: color 0.18s ease;
 }
 
 .lounge-strip:hover .lounge-strip__ghost-tail {
-  color: rgba(255, 255, 255, 0.20);
+  color: rgba(71, 85, 105, 0.38);
 }
 
 .lounge-strip__input {
@@ -204,36 +188,36 @@
   outline: none;
   font-family: var(--font-mono);
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 550;
   color: var(--text-primary);
-  caret-color: rgba(140, 100, 220, 0.75);
-  letter-spacing: 0.02em;
+  caret-color: var(--accent-calm);
+  letter-spacing: 0;
   padding: 0;
   line-height: var(--strip-height);
   -webkit-app-region: no-drag;
 }
 
 .lounge-strip__input::placeholder {
-  color: rgba(255, 255, 255, 0.25);
-  font-weight: 400;
-  letter-spacing: 0.03em;
-  transition: color 0.2s ease;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0;
+  transition: color 0.18s ease;
 }
 
 .lounge-strip__input:focus::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-secondary);
 }
 
 .lounge-strip__input:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: default;
 }
 
 .lounge-strip__feedback {
   font-family: var(--font-mono);
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0;
   line-height: var(--strip-height);
   white-space: nowrap;
   overflow: hidden;
@@ -245,67 +229,73 @@
 }
 
 .lounge-strip__feedback--error {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--accent-r3);
+}
+
+.lounge-strip__suggestions,
+.lounge-strip__choices,
+.lounge-strip__clarify {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.86)),
+    var(--glass-panel-strong);
+  backdrop-filter: blur(24px) saturate(1.18);
+  box-shadow: var(--shadow-panel);
+  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__suggestions {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 6px 0;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 10, 14, 0.92);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-  z-index: 6;
-  -webkit-app-region: no-drag;
+  padding: 6px;
 }
 
 .lounge-strip__suggestion {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr) auto;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   width: 100%;
+  min-height: 38px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 0;
-  padding: 9px 12px;
+  border-radius: 12px;
+  padding: 8px 10px;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
   -webkit-app-region: no-drag;
 }
 
 .lounge-strip__suggestion:hover,
 .lounge-strip__suggestion--active {
-  background: rgba(140, 100, 220, 0.10);
-}
-
-.lounge-strip__suggestion:last-child {
-  border-bottom: none;
+  background: rgba(37, 99, 235, 0.08);
 }
 
 .lounge-strip__suggestion-family {
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.42);
+  color: var(--text-muted);
 }
 
 .lounge-strip__suggestion-command {
   min-width: 0;
   font-family: var(--font-mono);
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.92);
+  font-weight: 600;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -314,76 +304,63 @@
 .lounge-strip__suggestion-detail {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.34);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .lounge-strip__choices {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
   padding: 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 10, 14, 0.92);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-  z-index: 6;
-  -webkit-app-region: no-drag;
 }
 
 .lounge-strip__choice {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 10px;
+  min-height: 36px;
+  background: rgba(255, 255, 255, 0.52);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 14px;
   padding: 9px 10px;
-  color: rgba(255, 255, 255, 0.90);
+  color: var(--text-primary);
   font-family: var(--font-mono);
   font-size: 12px;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+    border-color 0.14s ease,
+    background 0.14s ease,
+    transform 0.14s ease;
 }
 
 .lounge-strip__choice:hover {
-  border-color: rgba(56, 189, 248, 0.52);
-  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(8, 145, 178, 0.25);
+  background: rgba(236, 254, 255, 0.9);
+  transform: translateY(-1px);
 }
 
 .lounge-strip__clarify {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(251, 191, 36, 0.35);
-  background: rgba(35, 25, 8, 0.92);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-  z-index: 6;
-  -webkit-app-region: no-drag;
+  padding: 11px 13px;
+  border-color: rgba(183, 121, 31, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 235, 0.96), rgba(255, 247, 237, 0.9)),
+    var(--glass-panel-strong);
 }
 
 .lounge-strip__clarify-message {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: rgba(255, 244, 214, 0.92);
+  font-weight: 600;
+  color: rgba(92, 58, 14, 0.92);
 }
 
 .lounge-strip__clarify-slots {
   font-family: var(--font-mono);
   font-size: 11px;
-  color: rgba(255, 214, 102, 0.84);
+  color: rgba(120, 72, 17, 0.74);
   text-transform: lowercase;
 }
 
@@ -398,93 +375,70 @@
 .lounge-strip__pin-state {
   font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.36);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 999px;
-  padding: 3px 8px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.46);
 }
 
 .lounge-strip__pin-state--active {
-  color: rgba(140, 100, 220, 0.92);
-  border-color: rgba(140, 100, 220, 0.45);
-  background: rgba(140, 100, 220, 0.13);
+  color: rgba(30, 64, 175, 0.9);
+  border-color: rgba(37, 99, 235, 0.18);
+  background: rgba(219, 234, 254, 0.68);
 }
 
 .lounge-strip__hint {
   font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.25);
-  padding: 2px 6px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
-  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.42);
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
-.lounge-strip__action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: rgba(255, 255, 255, 0.25);
-  padding: 5px;
-  flex-shrink: 0;
-  line-height: 1;
-  border-radius: 8px;
-  transition:
-    color 0.2s ease,
-    background 0.2s ease;
-  -webkit-app-region: no-drag;
-}
-
-.lounge-strip__action-btn:hover {
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.lounge-strip__action-btn:active {
-  color: rgba(140, 100, 220, 0.7);
-  background: rgba(140, 100, 220, 0.06);
-}
-
+.lounge-strip__action-btn,
 .lounge-strip__pin {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.25);
-  padding: 6px 8px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
-  line-height: 1;
   border-radius: 999px;
+  cursor: pointer;
+  line-height: 1;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   transition:
-    color 0.2s ease,
-    background 0.2s ease,
-    border-color 0.2s ease;
+    color 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
   -webkit-app-region: no-drag;
 }
 
+.lounge-strip__action-btn:hover,
 .lounge-strip__pin:hover {
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 23, 42, 0.13);
+  transform: translateY(-1px);
+}
+
+.lounge-strip__action-btn:active,
+.lounge-strip__pin:active {
+  transform: translateY(0);
 }
 
 .lounge-strip__pin--active {
-  color: rgba(140, 100, 220, 0.9);
-  border-color: rgba(140, 100, 220, 0.5);
-  background: rgba(140, 100, 220, 0.15);
-}
-
-.lounge-strip__pin--active:hover {
-  color: rgba(140, 100, 220, 0.8);
-  background: rgba(140, 100, 220, 0.06);
+  color: rgba(30, 64, 175, 0.92);
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(219, 234, 254, 0.74);
 }

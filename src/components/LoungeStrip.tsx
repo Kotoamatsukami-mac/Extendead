@@ -152,12 +152,18 @@ export function LoungeStrip({
     isError ? 'lounge-strip--error' : '',
     isAwaitingClarify ? 'lounge-strip--clarify' : '',
     isAwaitingChoice ? 'lounge-strip--choice' : '',
+    !alwaysOnTop ? 'lounge-strip--floating' : '',
     embedded ? 'lounge-strip--embedded' : '',
   ].filter(Boolean).join(' ');
 
   return (
     <div className={stateClass} data-tauri-drag-region>
       <div className="lounge-strip__body" data-tauri-drag-region>
+        <span className="lounge-strip__drag-grip" data-tauri-drag-region aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
         <span className="lounge-strip__marker" aria-hidden="true" />
         <div className="lounge-strip__input-shell">
           {resultFeedback ? (
@@ -272,7 +278,12 @@ export function LoungeStrip({
             aria-label={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
             aria-pressed={alwaysOnTop}
           >
-            {alwaysOnTop ? 'UNPIN' : 'PIN'}
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M5.6 1.6h4.8l-.7 4 2.2 2.2v1H9v4.1L8 14.4l-1-1.5V8.8H4.1v-1l2.2-2.2-.7-4Z"
+                fill="currentColor"
+              />
+            </svg>
           </button>
         </div>
       </div>

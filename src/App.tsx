@@ -432,59 +432,61 @@ export function App() {
 
   return (
     <div className={`app app--${mode}`}>
-      <LoungeStrip
-        inputValue={inputValue}
-        prediction={prediction}
-        suggestions={suggestions}
-        clarificationMessage={
-          execState === 'awaiting_clarify'
-            ? (parsedCommand?.clarification_message ?? parsedCommand?.unresolved_message ?? null)
-            : null
-        }
-        clarificationSlots={execState === 'awaiting_clarify' ? (parsedCommand?.clarification_slots ?? []) : []}
-        choices={execState === 'awaiting_choice' ? (parsedCommand?.choices ?? []) : []}
-        execState={execState}
-        alwaysOnTop={alwaysOnTop}
-        focusTrigger={focusTrigger}
-        resultFeedback={resultFeedback}
-        embedded={mode === 'expanded'}
-        onInput={handleInputChange}
-        onSubmit={handleSubmit}
-        onAcceptPrediction={handleAcceptPrediction}
-        onApplySuggestion={handleApplySuggestion}
-        onSelectChoice={handleSelectChoice}
-        onEscape={handleCollapse}
-        onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-        onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}
-      />
-      {mode === 'expanded' && (
-        showDeveloperPanel ? (
-          <DeveloperPanel
-            status={primaryProviderStatus}
-            busy={developerBusy}
-            onRefresh={() => void refreshDeveloperStatus()}
-            onLink={handleLinkPrimaryEngine}
-            onClear={handleClearPrimaryEngine}
-            onInspectLocal={handleInspectLocal}
-            onClose={handleCollapse}
-          />
-        ) : (
-          <ExpandedConsole
-            parsedCommand={parsedCommand}
-            selectedRouteIndex={selectedRouteIndex}
-            execState={execState}
-            events={events}
-            result={result}
-            permissionStatus={permissionStatus}
-            history={history}
-            onSelectRoute={handleSelectRoute}
-            onConfirm={handleConfirm}
-            onCancel={handleCancel}
-            onUndo={handleUndo}
-            onCollapse={handleCollapse}
-          />
-        )
-      )}
+      <div className="app__surface" data-tauri-drag-region>
+        <LoungeStrip
+          inputValue={inputValue}
+          prediction={prediction}
+          suggestions={suggestions}
+          clarificationMessage={
+            execState === 'awaiting_clarify'
+              ? (parsedCommand?.clarification_message ?? parsedCommand?.unresolved_message ?? null)
+              : null
+          }
+          clarificationSlots={execState === 'awaiting_clarify' ? (parsedCommand?.clarification_slots ?? []) : []}
+          choices={execState === 'awaiting_choice' ? (parsedCommand?.choices ?? []) : []}
+          execState={execState}
+          alwaysOnTop={alwaysOnTop}
+          focusTrigger={focusTrigger}
+          resultFeedback={resultFeedback}
+          embedded={mode === 'expanded'}
+          onInput={handleInputChange}
+          onSubmit={handleSubmit}
+          onAcceptPrediction={handleAcceptPrediction}
+          onApplySuggestion={handleApplySuggestion}
+          onSelectChoice={handleSelectChoice}
+          onEscape={handleCollapse}
+          onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+          onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}
+        />
+        {mode === 'expanded' && (
+          showDeveloperPanel ? (
+            <DeveloperPanel
+              status={primaryProviderStatus}
+              busy={developerBusy}
+              onRefresh={() => void refreshDeveloperStatus()}
+              onLink={handleLinkPrimaryEngine}
+              onClear={handleClearPrimaryEngine}
+              onInspectLocal={handleInspectLocal}
+              onClose={handleCollapse}
+            />
+          ) : (
+            <ExpandedConsole
+              parsedCommand={parsedCommand}
+              selectedRouteIndex={selectedRouteIndex}
+              execState={execState}
+              events={events}
+              result={result}
+              permissionStatus={permissionStatus}
+              history={history}
+              onSelectRoute={handleSelectRoute}
+              onConfirm={handleConfirm}
+              onCancel={handleCancel}
+              onUndo={handleUndo}
+              onCollapse={handleCollapse}
+            />
+          )
+        )}
+      </div>
     </div>
   );
 }
