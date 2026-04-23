@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import type { CommandSuggestion, ResultFeedback } from '../types/commands';
+import { WindowDragHandle } from './WindowDragHandle';
 import './LoungeStrip.css';
 
 interface LoungeStripProps {
@@ -21,8 +22,10 @@ interface LoungeStripProps {
     | 'done'
     | 'error';
   alwaysOnTop: boolean;
+  pinBusy?: boolean;
   focusTrigger: number;
   resultFeedback?: ResultFeedback | null;
+  windowFeedback?: ResultFeedback | null;
   embedded?: boolean;
   onInput: (value: string) => void;
   onSubmit: (value: string) => void;
@@ -43,8 +46,10 @@ export function LoungeStrip({
   choices = [],
   execState,
   alwaysOnTop,
+  pinBusy,
   focusTrigger,
   resultFeedback,
+  windowFeedback,
   embedded,
   onInput,
   onSubmit,
@@ -157,13 +162,14 @@ export function LoungeStrip({
   ].filter(Boolean).join(' ');
 
   return (
-    <div className={stateClass} data-tauri-drag-region>
-      <div className="lounge-strip__body" data-tauri-drag-region>
-        <span className="lounge-strip__drag-grip" data-tauri-drag-region aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </span>
+    <div className={stateClass}>
+      <div className="lounge-strip__body">
+        {!embedded && (
+          <WindowDragHandle
+            locked={alwaysOnTop}
+            className="lounge-strip__drag-handle"
+          />
+        )}
         <span className="lounge-strip__marker" aria-hidden="true" />
         <div className="lounge-strip__input-shell">
           {resultFeedback ? (
@@ -253,6 +259,11 @@ export function LoungeStrip({
           <span className={`lounge-strip__pin-state ${alwaysOnTop ? 'lounge-strip__pin-state--active' : ''}`}>
             {alwaysOnTop ? 'Pinned' : 'Floating'}
           </span>
+          {windowFeedback && (
+            <span className={`lounge-strip__window-feedback lounge-strip__window-feedback--${windowFeedback.type}`}>
+              {windowFeedback.message}
+            </span>
+          )}
           {(showPrediction || showSuggestions) && <span className="lounge-strip__hint">tab</span>}
           {showChoices && <span className="lounge-strip__hint">pick</span>}
           {showClarify && <span className="lounge-strip__hint">clarify</span>}
@@ -274,6 +285,7 @@ export function LoungeStrip({
           <button
             className={`lounge-strip__pin ${alwaysOnTop ? 'lounge-strip__pin--active' : ''}`}
             onClick={onToggleAlwaysOnTop}
+            disabled={pinBusy}
             title={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
             aria-label={alwaysOnTop ? 'Unpin window' : 'Pin window on top'}
             aria-pressed={alwaysOnTop}

@@ -8,6 +8,7 @@ import { HistoryList } from './HistoryList';
 import { PermissionBanner } from './PermissionBanner';
 import { RiskBadge } from './RiskBadge';
 import { RouteSelector } from './RouteSelector';
+import { WindowDragHandle } from './WindowDragHandle';
 import './ExpandedConsole.css';
 
 type ExecState =
@@ -29,6 +30,7 @@ interface ExpandedConsoleProps {
   result: ExecutionResult | null;
   permissionStatus: PermissionStatus | null;
   history: HistoryEntry[];
+  alwaysOnTop: boolean;
   onSelectRoute: (index: number) => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -44,6 +46,7 @@ export function ExpandedConsole({
   result,
   permissionStatus,
   history,
+  alwaysOnTop,
   onSelectRoute,
   onConfirm,
   onCancel,
@@ -65,7 +68,13 @@ export function ExpandedConsole({
   return (
     <div className="expanded-console">
       {/* Header */}
-      <div className="expanded-console__header" data-tauri-drag-region="true">
+      <div className="expanded-console__header">
+        <WindowDragHandle
+          locked={alwaysOnTop}
+          className="expanded-console__drag-handle"
+          titleWhenUnlocked="Drag shell"
+          titleWhenLocked="Pinned: unpin to move"
+        />
         <div className="expanded-console__intent">
           {parsedCommand && (
             <>

@@ -1,0 +1,33 @@
+.window-drag-handle {
+  width: 18px;
+  height: 30px;
+  display: grid;
+  grid-auto-rows: 4px;
+  place-content: center;
+  gap: 3px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.window-drag-handle--free {
+  cursor: grab;
+  opacity: 0.78;
+}
+
+.window-drag-handle--free:active {
+  cursor: grabbing;
+}
+
+.window-drag-handle--locked {
+  cursor: default;
+  opacity: 0.34;
+}
+
+.window-drag-handle__dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.22);
+}

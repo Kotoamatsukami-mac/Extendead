@@ -899,7 +899,7 @@ pub async fn set_window_mode(mode: String, window: tauri::WebviewWindow) -> Resu
 pub async fn toggle_always_on_top(
     enabled: bool,
     window: tauri::WebviewWindow,
-) -> Result<(), String> {
+) -> Result<crate::config::AppConfig, String> {
     window
         .set_always_on_top(enabled)
         .map_err(|e| e.to_string())?;
@@ -908,9 +908,9 @@ pub async fn toggle_always_on_top(
     // Persist preference so it survives restarts.
     let mut config = crate::config::load_config();
     config.always_on_top = enabled;
-    let _ = crate::config::save_config(&config);
+    crate::config::save_config(&config).map_err(|e| e.to_string())?;
 
-    Ok(())
+    Ok(config)
 }
 
 // ── refresh_machine_info ──────────────────────────────────────────────────────

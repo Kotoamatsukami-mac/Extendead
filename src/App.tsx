@@ -56,6 +56,8 @@ export function App() {
   const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
   const [developerBusy, setDeveloperBusy] = useState(false);
   const [resultFeedback, setResultFeedback] = useState<ResultFeedback | null>(null);
+  const [windowFeedback, setWindowFeedback] = useState<ResultFeedback | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [autoExec, setAutoExec] = useState<{
     cmd: ParsedCommand;
@@ -64,6 +66,7 @@ export function App() {
 
   const oneShotRef = useRef(false);
   const feedbackTimerRef = useRef<number>(0);
+  const windowFeedbackTimerRef = useRef<number>(0);
   const suggestionRequestRef = useRef(0);
 
   const { permissionStatus, refresh: refreshPermissionStatus } = usePermissionStatus();
@@ -80,6 +83,14 @@ export function App() {
       setParsedCommand(null);
       setResult(null);
       setFocusTrigger((n) => n + 1);
+    }, duration);
+  }
+
+  function showWindowFeedback(message: string, type: 'success' | 'error', duration: number) {
+    window.clearTimeout(windowFeedbackTimerRef.current);
+    setWindowFeedback({ message, type });
+    windowFeedbackTimerRef.current = window.setTimeout(() => {
+      setWindowFeedback(null);
     }, duration);
   }
 
@@ -320,15 +331,21 @@ export function App() {
   }, [parsedCommand, execState, bridge]);
 
   const handleToggleAlwaysOnTop = useCallback(() => {
+    if (pinBusy) return;
     const next = !alwaysOnTop;
-    setAlwaysOnTop(next);
-    void bridge.toggleAlwaysOnTop(next).then(async () => {
-      const config = await bridge.getAppConfig();
-      if (config) {
+    setPinBusy(true);
+    void bridge
+      .toggleAlwaysOnTop(next)
+      .then((config) => {
         setAlwaysOnTop(config.always_on_top);
-      }
-    });
-  }, [alwaysOnTop, bridge]);
+      })
+      .catch((err) => {
+        showWindowFeedback(`Pin toggle failed: ${String(err)}`, 'error', 2600);
+      })
+      .finally(() => {
+        setPinBusy(false);
+      });
+  }, [alwaysOnTop, bridge, pinBusy]);
 
   const handleLinkPrimaryEngine = useCallback(
     async (value: string) => {
@@ -432,7 +449,7 @@ export function App() {
 
   return (
     <div className={`app app--${mode}`}>
-      <div className="app__surface" data-tauri-drag-region>
+      <div className="app__surface">
         <LoungeStrip
           inputValue={inputValue}
           prediction={prediction}
@@ -446,8 +463,10 @@ export function App() {
           choices={execState === 'awaiting_choice' ? (parsedCommand?.choices ?? []) : []}
           execState={execState}
           alwaysOnTop={alwaysOnTop}
+          pinBusy={pinBusy}
           focusTrigger={focusTrigger}
           resultFeedback={resultFeedback}
+          windowFeedback={windowFeedback}
           embedded={mode === 'expanded'}
           onInput={handleInputChange}
           onSubmit={handleSubmit}
@@ -463,6 +482,7 @@ export function App() {
             <DeveloperPanel
               status={primaryProviderStatus}
               busy={developerBusy}
+              alwaysOnTop={alwaysOnTop}
               onRefresh={() => void refreshDeveloperStatus()}
               onLink={handleLinkPrimaryEngine}
               onClear={handleClearPrimaryEngine}
@@ -478,6 +498,7 @@ export function App() {
               result={result}
               permissionStatus={permissionStatus}
               history={history}
+              alwaysOnTop={alwaysOnTop}
               onSelectRoute={handleSelectRoute}
               onConfirm={handleConfirm}
               onCancel={handleCancel}
