@@ -138,9 +138,15 @@ pub fn run() {
 
             let cfg = config::load_config();
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_decorations(false);
-                let _ = window.set_shadow(false);
-                let _ = window.set_always_on_top(cfg.always_on_top);
+                if let Err(e) = window.set_decorations(false) {
+                    log::warn!("Failed to disable decorations: {e}");
+                }
+                if let Err(e) = window.set_shadow(false) {
+                    log::warn!("Failed to disable shadow: {e}");
+                }
+                if let Err(e) = window.set_always_on_top(cfg.always_on_top) {
+                    log::warn!("Failed to apply always-on-top={}: {e}", cfg.always_on_top);
+                }
             }
 
             app.global_shortcut()

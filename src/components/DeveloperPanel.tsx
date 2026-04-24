@@ -1,11 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ProviderKeyStatus } from '../types/commands';
+import { WindowDragHandle } from './WindowDragHandle';
 import './DeveloperPanel.css';
 
 interface DeveloperPanelProps {
   status: ProviderKeyStatus | null;
   busy: boolean;
+  alwaysOnTop: boolean;
   onRefresh: () => void;
   onLink: (value: string) => Promise<void>;
   onClear: () => Promise<void>;
@@ -16,6 +18,7 @@ interface DeveloperPanelProps {
 export function DeveloperPanel({
   status,
   busy,
+  alwaysOnTop,
   onRefresh,
   onLink,
   onClear,
@@ -88,6 +91,12 @@ export function DeveloperPanel({
   return (
     <section className="developer-panel" aria-label="Developer engine panel">
       <div className="developer-panel__header">
+        <WindowDragHandle
+          locked={alwaysOnTop}
+          className="developer-panel__drag-handle"
+          titleWhenUnlocked="Drag shell"
+          titleWhenLocked="Pinned: unpin to move"
+        />
         <div>
           <span className="developer-panel__eyebrow">Developer only</span>
           <h2 className="developer-panel__title">Engine link</h2>

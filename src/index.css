@@ -1,31 +1,48 @@
 /* ── Design tokens ────────────────────────────────────────────────────────── */
 
 :root {
-  --glass-bg: rgba(248, 250, 252, 0.86);
-  --glass-panel: rgba(255, 255, 255, 0.76);
-  --glass-panel-strong: rgba(255, 255, 255, 0.9);
-  --glass-border: rgba(15, 23, 42, 0.08);
-  --glass-border-strong: rgba(15, 23, 42, 0.14);
-  --hairline: rgba(15, 23, 42, 0.06);
-  --text-primary: rgba(15, 23, 42, 0.92);
-  --text-secondary: rgba(51, 65, 85, 0.58);
-  --text-muted: rgba(71, 85, 105, 0.42);
+  --surface-0: rgba(3, 5, 10, 0.76);
+  --surface-1: rgba(8, 12, 22, 0.82);
+  --surface-2: rgba(13, 18, 32, 0.88);
+  --glass-bg: var(--surface-0);
+  --glass-panel: var(--surface-1);
+  --glass-panel-strong: var(--surface-2);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-border-strong: rgba(255, 255, 255, 0.16);
+  --hairline: rgba(255, 255, 255, 0.06);
+  --text-primary: rgba(248, 250, 252, 0.94);
+  --text-secondary: rgba(203, 213, 225, 0.66);
+  --text-muted: rgba(148, 163, 184, 0.46);
   --accent-r0: #047857;
   --accent-r1: #b7791f;
   --accent-r2: #c2410c;
   --accent-r3: #dc2626;
-  --accent-calm: #2563eb;
-  --accent-teal: #0891b2;
+  --accent-calm: #60a5fa;
+  --accent-teal: #34d399;
+  --accent-red: #ff375f;
+  --accent-orange: #ff9f0a;
+  --accent-violet: #a78bfa;
+  --accent-blue: #60a5fa;
+  --accent-green: #34d399;
+  --evil-rainbow: linear-gradient(
+    90deg,
+    var(--accent-red),
+    var(--accent-violet),
+    var(--accent-blue),
+    var(--accent-green),
+    var(--accent-orange),
+    var(--accent-red)
+  );
   --strip-height: 56px;
   --strip-radius: 28px;
   --expanded-radius: 22px;
   --shadow-panel:
-    0 22px 58px rgba(15, 23, 42, 0.18),
-    0 8px 22px rgba(15, 23, 42, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.86) inset;
+    0 28px 80px rgba(0, 0, 0, 0.55),
+    0 10px 30px rgba(0, 0, 0, 0.30),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
   --shadow-float:
-    0 18px 42px rgba(15, 23, 42, 0.14),
-    0 5px 16px rgba(15, 23, 42, 0.08);
+    0 20px 60px rgba(0, 0, 0, 0.45),
+    0 6px 18px rgba(0, 0, 0, 0.24);
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Mono', monospace;
 }
@@ -62,6 +79,11 @@ button {
   font-family: inherit;
 }
 
+::selection {
+  background: rgba(96, 165, 250, 0.25);
+  color: var(--text-primary);
+}
+
 /* ── App shell ────────────────────────────────────────────────────────────── */
 
 .app {
@@ -86,7 +108,6 @@ button {
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  -webkit-app-region: drag;
 }
 
 .app--expanded .app__surface {
@@ -95,10 +116,9 @@ button {
   border: 1px solid var(--glass-border);
   border-radius: var(--expanded-radius);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 249, 0.78)),
-    var(--glass-bg);
+    linear-gradient(180deg, var(--glass-panel-strong), var(--glass-bg));
   box-shadow: var(--shadow-panel);
-  backdrop-filter: blur(28px) saturate(1.22);
+  backdrop-filter: blur(28px) saturate(1.18);
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
@@ -112,6 +132,17 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(15, 23, 42, 0.16);
+  background: rgba(255, 255, 255, 0.16);
   border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }

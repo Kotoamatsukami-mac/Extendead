@@ -146,12 +146,8 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
   );
 
   const toggleAlwaysOnTop = useCallback(
-    async (enabled: boolean): Promise<void> => {
-      try {
-        await invoke('toggle_always_on_top', { enabled });
-      } catch {
-        // best-effort
-      }
+    async (enabled: boolean) => {
+      return invoke<AppConfig>('toggle_always_on_top', { enabled });
     },
     [],
   );
