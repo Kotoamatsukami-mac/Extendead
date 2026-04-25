@@ -28,6 +28,8 @@ struct ProviderCandidatePayload {
     missing_slots: Vec<String>,
     confidence: f32,
     clarification_needed: bool,
+    #[serde(default)]
+    requires_confirmation: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +183,13 @@ fn candidate_from_payload(
 
                 let clarification_needed =
                     payload.clarification_needed || !missing_slots.is_empty();
+                let risk_baseline = if payload.requires_confirmation
+                    && action.risk_baseline < crate::models::RiskLevel::R2
+                {
+                    crate::models::RiskLevel::R2
+                } else {
+                    action.risk_baseline.clone()
+                };
 
                 CandidateIntent {
                     family: action.family,
@@ -189,7 +198,7 @@ fn candidate_from_payload(
                     missing_slots,
                     confidence: payload.confidence.clamp(0.0, 1.0),
                     clarification_needed,
-                    risk_baseline: action.risk_baseline.clone(),
+                    risk_baseline,
                     executor_family: action.executor_family,
                     source: InterpretationSource::Provider,
                 }
@@ -484,6 +493,8 @@ fn system_prompt() -> String {
         "For open_service, set slots.service to the exact supported service ID whenever the user names one.",
         "For browser tab actions, set slots.browser when a browser is specified.",
         "If required information is missing, keep the best candidate, list missing_slots, and set clarification_needed to true.",
+        "Set requires_confirmation true for risky, destructive, filesystem-moving, force-quit, or privacy-sensitive requests.",
+        "Never return raw shell commands, scripts, or executable strings.",
         "Prefer one strong candidate. Return up to three only when materially different actions remain plausible.",
     ]
     .join(" ")
@@ -547,7 +558,8 @@ fn response_schema() -> serde_json::Value {
                         "slots",
                         "missing_slots",
                         "confidence",
-                        "clarification_needed"
+                        "clarification_needed",
+                        "requires_confirmation"
                     ],
                     "properties": {
                         "canonical_action": {
@@ -585,6 +597,9 @@ fn response_schema() -> serde_json::Value {
                             "maximum": 1.0
                         },
                         "clarification_needed": {
+                            "type": "boolean"
+                        },
+                        "requires_confirmation": {
                             "type": "boolean"
                         }
                     }

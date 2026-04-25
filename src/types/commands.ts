@@ -28,7 +28,9 @@ export type UnresolvedCode =
   | 'target_already_exists'
   | 'destination_path_unresolved'
   | 'destination_parent_missing'
-  | 'permanent_delete_blocked';
+  | 'permanent_delete_blocked'
+  | 'ambiguous_target'
+  | 'provider_configuration_required';
 
 export type ExecutionOutcome =
   | 'success'
@@ -54,6 +56,18 @@ export interface OpenAppAction {
 
 export interface QuitAppAction {
   type: 'quit_app';
+  bundle_id: string;
+  app_name: string;
+}
+
+export interface HideAppAction {
+  type: 'hide_app';
+  bundle_id: string;
+  app_name: string;
+}
+
+export interface ForceQuitAppAction {
+  type: 'force_quit_app';
   bundle_id: string;
   app_name: string;
 }
@@ -85,15 +99,33 @@ export interface MovePathAction {
   destination_path: string;
 }
 
+export interface ResolvedPlanStep {
+  label: string;
+  description: string;
+  action: ResolvedAction;
+  execution_group: string;
+  risk: RiskLevel;
+  requires_approval: boolean;
+}
+
+export interface RunPlanAction {
+  type: 'run_plan';
+  mode_name: string;
+  steps: ResolvedPlanStep[];
+}
+
 export type ResolvedAction =
   | OpenUrlAction
   | OpenAppAction
   | QuitAppAction
+  | HideAppAction
+  | ForceQuitAppAction
   | AppleScriptTemplateAction
   | OpenSystemPreferencesAction
   | OpenPathAction
   | CreateFolderAction
-  | MovePathAction;
+  | MovePathAction
+  | RunPlanAction;
 
 export interface ResolvedRoute {
   label: string;

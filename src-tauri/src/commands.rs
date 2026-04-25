@@ -229,10 +229,10 @@ fn intent_from_candidate(candidate: &CandidateIntent) -> Option<parser::Intent> 
 
     match candidate.canonical_action {
         CanonicalAction::OpenApp => {
-            slot("app").map(|app| parser::Intent::OpenAppNamed(app.to_string()))
+            slot("app").map(|app| parser::Intent::OpenTarget(app.to_string()))
         }
         CanonicalAction::QuitApp => {
-            slot("app").map(|app| parser::Intent::CloseAppNamed(app.to_string()))
+            slot("app").map(|app| parser::Intent::CloseTarget(app.to_string()))
         }
         CanonicalAction::OpenPath => {
             slot("path").map(|path| parser::Intent::OpenPath(path.to_string()))
@@ -284,19 +284,31 @@ fn intent_from_candidate(candidate: &CandidateIntent) -> Option<parser::Intent> 
 }
 
 fn machine_snapshot(state: &tauri::State<'_, AppState>) -> Result<MachineInfo, String> {
-    let inner = state.inner.lock().map_err(|_| "state lock error")?;
-    Ok(inner
-        .machine_info
-        .clone()
-        .unwrap_or_else(|| crate::models::MachineInfo {
-            hostname: String::new(),
-            username: String::new(),
-            os_version: String::new(),
-            architecture: String::new(),
-            installed_browsers: vec![],
-            installed_apps: vec![],
-            home_dir: String::new(),
-        }))
+    let current = {
+        let inner = state.inner.lock().map_err(|_| "state lock error")?;
+        inner.machine_info.clone()
+    };
+
+    let needs_scan = current
+        .as_ref()
+        .map(machine::app_cache_is_stale)
+        .unwrap_or(true);
+    if needs_scan {
+        let info = machine::scan_machine();
+        let mut inner = state.inner.lock().map_err(|_| "state lock error")?;
+        inner.machine_info = Some(info.clone());
+        return Ok(info);
+    }
+
+    Ok(current.unwrap_or_else(|| crate::models::MachineInfo {
+        hostname: String::new(),
+        username: String::new(),
+        os_version: String::new(),
+        architecture: String::new(),
+        installed_browsers: vec![],
+        installed_apps: vec![],
+        home_dir: String::new(),
+    }))
 }
 
 fn intent_key(intent: &parser::Intent) -> String {
@@ -311,8 +323,12 @@ fn intent_key(intent: &parser::Intent) -> String {
                 parser::normalize(browser)
             )
         }
-        parser::Intent::OpenAppNamed(app) => format!("open_app:{}", parser::normalize(app)),
-        parser::Intent::CloseAppNamed(app) => format!("close_app:{}", parser::normalize(app)),
+        parser::Intent::OpenTarget(app) => format!("open_app:{}", parser::normalize(app)),
+        parser::Intent::CloseTarget(app) => format!("close_app:{}", parser::normalize(app)),
+        parser::Intent::HideTarget(app) => format!("hide_app:{}", parser::normalize(app)),
+        parser::Intent::ForceQuitTarget(app) => {
+            format!("force_quit_app:{}", parser::normalize(app))
+        }
         parser::Intent::OpenPath(path) => format!("open_path:{}", parser::normalize(path)),
         parser::Intent::CreateFolder { name, base } => {
             format!(
@@ -358,15 +374,13 @@ fn intent_key(intent: &parser::Intent) -> String {
         parser::Intent::DeletePathPermanently(path) => {
             format!("delete_permanent:{}", parser::normalize(path))
         }
-        parser::Intent::OpenSafari => "open_safari".to_string(),
-        parser::Intent::OpenChrome => "open_chrome".to_string(),
-        parser::Intent::OpenFirefox => "open_firefox".to_string(),
-        parser::Intent::OpenBrave => "open_brave".to_string(),
-        parser::Intent::OpenArc => "open_arc".to_string(),
-        parser::Intent::OpenFinder => "open_finder".to_string(),
-        parser::Intent::OpenSlack => "open_slack".to_string(),
+        parser::Intent::RunMode(mode) => format!("run_mode:{}", parser::normalize(mode)),
         parser::Intent::MuteVolume => "mute_volume".to_string(),
         parser::Intent::SetVolume(level) => format!("set_volume:{level}"),
+        parser::Intent::AdjustVolume {
+            direction,
+            intensity,
+        } => format!("adjust_volume:{direction:?}:{intensity}"),
         parser::Intent::OpenDisplaySettings => "open_display_settings".to_string(),
         parser::Intent::RevealDownloads => "reveal_downloads".to_string(),
         parser::Intent::IncreaseBrightness => "brightness_up".to_string(),
@@ -380,15 +394,10 @@ fn intent_family_label(intent: &parser::Intent) -> &'static str {
         parser::Intent::OpenService(_) | parser::Intent::OpenServiceInBrowser { .. } => {
             "open service"
         }
-        parser::Intent::OpenAppNamed(_)
-        | parser::Intent::OpenSafari
-        | parser::Intent::OpenChrome
-        | parser::Intent::OpenFirefox
-        | parser::Intent::OpenBrave
-        | parser::Intent::OpenArc
-        | parser::Intent::OpenFinder
-        | parser::Intent::OpenSlack => "open app",
-        parser::Intent::CloseAppNamed(_) => "close app",
+        parser::Intent::OpenTarget(_) => "open app",
+        parser::Intent::CloseTarget(_) => "close app",
+        parser::Intent::HideTarget(_) => "hide app",
+        parser::Intent::ForceQuitTarget(_) => "force quit app",
         parser::Intent::BrowserNewTab { .. }
         | parser::Intent::BrowserCloseTab { .. }
         | parser::Intent::BrowserReopenClosedTab { .. } => "browser tab",
@@ -397,7 +406,10 @@ fn intent_family_label(intent: &parser::Intent) -> &'static str {
         parser::Intent::MovePath { .. } => "move path",
         parser::Intent::TrashPath(_) => "trash path",
         parser::Intent::DeletePathPermanently(_) => "delete path",
-        parser::Intent::MuteVolume | parser::Intent::SetVolume(_) => "sound",
+        parser::Intent::RunMode(_) => "mode",
+        parser::Intent::MuteVolume
+        | parser::Intent::SetVolume(_)
+        | parser::Intent::AdjustVolume { .. } => "sound",
         parser::Intent::IncreaseBrightness | parser::Intent::DecreaseBrightness => "brightness",
         parser::Intent::OpenDisplaySettings => "settings",
         parser::Intent::Unknown(_) => "unknown",
@@ -418,8 +430,12 @@ fn intent_canonical(intent: &parser::Intent) -> String {
                 .unwrap_or_else(|| service_id.to_string());
             format!("open {service} in {}", parser::normalize(browser))
         }
-        parser::Intent::OpenAppNamed(app) => format!("open {}", parser::normalize(app)),
-        parser::Intent::CloseAppNamed(app) => format!("close {}", parser::normalize(app)),
+        parser::Intent::OpenTarget(app) => format!("open {}", parser::normalize(app)),
+        parser::Intent::CloseTarget(app) => format!("close {}", parser::normalize(app)),
+        parser::Intent::HideTarget(app) => format!("hide {}", parser::normalize(app)),
+        parser::Intent::ForceQuitTarget(app) => {
+            format!("force quit {}", parser::normalize(app))
+        }
         parser::Intent::OpenPath(path) => format!("open {path}"),
         parser::Intent::CreateFolder { name, base } => match base {
             Some(base) => format!("create folder called {name} in {base}"),
@@ -447,15 +463,13 @@ fn intent_canonical(intent: &parser::Intent) -> String {
         },
         parser::Intent::IncreaseBrightness => "increase brightness".to_string(),
         parser::Intent::DecreaseBrightness => "decrease brightness".to_string(),
-        parser::Intent::OpenSafari => "open safari".to_string(),
-        parser::Intent::OpenChrome => "open chrome".to_string(),
-        parser::Intent::OpenFirefox => "open firefox".to_string(),
-        parser::Intent::OpenBrave => "open brave".to_string(),
-        parser::Intent::OpenArc => "open arc".to_string(),
-        parser::Intent::OpenFinder => "open finder".to_string(),
-        parser::Intent::OpenSlack => "open slack".to_string(),
+        parser::Intent::RunMode(mode) => format!("run {} mode", parser::normalize(mode)),
         parser::Intent::MuteVolume => "mute".to_string(),
         parser::Intent::SetVolume(level) => format!("set volume to {level}"),
+        parser::Intent::AdjustVolume {
+            direction,
+            intensity,
+        } => format!("adjust volume {direction:?} by {intensity}"),
         parser::Intent::OpenDisplaySettings => "display settings".to_string(),
         parser::Intent::RevealDownloads => "downloads".to_string(),
         parser::Intent::Unknown(raw) => raw.to_string(),
@@ -497,6 +511,12 @@ fn suggestion_intents(input: &str, machine: &MachineInfo) -> Vec<parser::Intent>
 
     push_intent_if_new(&mut intents, parser::parse_intent(input));
 
+    for mode in ["study", "focus", "break"] {
+        if mode.starts_with(&normalized) || normalized == format!("{mode} mode") {
+            push_intent_if_new(&mut intents, parser::Intent::RunMode(mode.to_string()));
+        }
+    }
+
     if let Some(query) = normalized
         .strip_prefix("open ")
         .or_else(|| normalized.strip_prefix("launch "))
@@ -507,17 +527,14 @@ fn suggestion_intents(input: &str, machine: &MachineInfo) -> Vec<parser::Intent>
         if !query.is_empty() && !path_like(query) {
             for app in &machine.installed_apps {
                 if parser::normalize(&app.name).contains(query) {
-                    push_intent_if_new(
-                        &mut intents,
-                        parser::Intent::OpenAppNamed(app.name.clone()),
-                    );
+                    push_intent_if_new(&mut intents, parser::Intent::OpenTarget(app.name.clone()));
                 }
             }
             for browser in &machine.installed_browsers {
                 if parser::normalize(&browser.name).contains(query) {
                     push_intent_if_new(
                         &mut intents,
-                        parser::Intent::OpenAppNamed(browser.name.clone()),
+                        parser::Intent::OpenTarget(browser.name.clone()),
                     );
                 }
             }
@@ -533,17 +550,14 @@ fn suggestion_intents(input: &str, machine: &MachineInfo) -> Vec<parser::Intent>
         if !query.is_empty() {
             for app in &machine.installed_apps {
                 if parser::normalize(&app.name).contains(query) {
-                    push_intent_if_new(
-                        &mut intents,
-                        parser::Intent::CloseAppNamed(app.name.clone()),
-                    );
+                    push_intent_if_new(&mut intents, parser::Intent::CloseTarget(app.name.clone()));
                 }
             }
             for browser in &machine.installed_browsers {
                 if parser::normalize(&browser.name).contains(query) {
                     push_intent_if_new(
                         &mut intents,
-                        parser::Intent::CloseAppNamed(browser.name.clone()),
+                        parser::Intent::CloseTarget(browser.name.clone()),
                     );
                 }
             }
@@ -722,6 +736,7 @@ pub async fn parse_command(
             }
         }
     } else if provider_eligible && !provider_configured {
+        cmd.unresolved_code = Some(crate::models::UnresolvedCode::ProviderConfigurationRequired);
         append_provider_hint(&mut cmd);
     }
 
@@ -1108,7 +1123,7 @@ mod tests {
         let c = candidate(CanonicalAction::OpenApp, &[("app", "Slack")]);
         assert_eq!(
             intent_from_candidate(&c),
-            Some(parser::Intent::OpenAppNamed("Slack".to_string()))
+            Some(parser::Intent::OpenTarget("Slack".to_string()))
         );
     }
 

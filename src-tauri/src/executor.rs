@@ -68,7 +68,7 @@ fn human_message_for_error(e: &AppError) -> String {
 
 fn applescript_permission_profile(template_id: &str) -> AppleScriptPermissionProfile {
     match template_id {
-        "mute_volume" | "unmute_volume" | "set_volume" | "get_volume" => {
+        "mute_volume" | "unmute_volume" | "set_volume" | "adjust_volume" | "get_volume" => {
             AppleScriptPermissionProfile::Volume
         }
         "browser_new_tab" | "browser_close_tab" | "browser_reopen_closed_tab" => {
@@ -134,9 +134,12 @@ pub fn execute<R: Runtime>(
     let command_id = command.id.as_str();
 
     let pre_volume: Option<u8> = match &route.action {
-        ResolvedAction::AppleScriptTemplate { template_id, .. } if template_id == "set_volume" => {
+        ResolvedAction::AppleScriptTemplate { template_id, .. }
+            if template_id == "set_volume" || template_id == "adjust_volume" =>
+        {
             applescript::get_volume()
         }
+        ResolvedAction::RunPlan { .. } => applescript::get_volume(),
         _ => None,
     };
 
@@ -259,6 +262,36 @@ fn dispatch_action<R: Runtime>(
             );
             quit_app(app_name, bundle_id)
         }
+        ResolvedAction::HideApp {
+            bundle_id,
+            app_name,
+        } => {
+            emit(
+                app,
+                timeline,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Hiding {app_name}"),
+                ),
+            );
+            hide_app(app_name, bundle_id)
+        }
+        ResolvedAction::ForceQuitApp {
+            bundle_id,
+            app_name,
+        } => {
+            emit(
+                app,
+                timeline,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Force quitting {app_name}"),
+                ),
+            );
+            force_quit_app(app_name, bundle_id)
+        }
         ResolvedAction::AppleScriptTemplate {
             script,
             template_id,
@@ -268,6 +301,7 @@ fn dispatch_action<R: Runtime>(
                 "mute_volume" => "Muting system audio output".to_string(),
                 "unmute_volume" => "Unmuting system audio output".to_string(),
                 "set_volume" => "Setting output volume".to_string(),
+                "adjust_volume" => "Adjusting output volume".to_string(),
                 "browser_new_tab" => "Opening a new browser tab".to_string(),
                 "browser_close_tab" => "Closing browser tab".to_string(),
                 "browser_reopen_closed_tab" => "Reopening closed browser tab".to_string(),
@@ -284,6 +318,7 @@ fn dispatch_action<R: Runtime>(
                 "mute_volume" => "System audio muted".to_string(),
                 "unmute_volume" => "System audio unmuted".to_string(),
                 "set_volume" => "Output volume set".to_string(),
+                "adjust_volume" => "Output volume adjusted".to_string(),
                 "browser_new_tab" => "New tab opened".to_string(),
                 "browser_close_tab" => "Tab closed".to_string(),
                 "browser_reopen_closed_tab" => "Closed tab reopened".to_string(),
@@ -343,6 +378,124 @@ fn dispatch_action<R: Runtime>(
             );
             move_path(source_path, destination_path)
         }
+        ResolvedAction::RunPlan { mode_name, steps } => {
+            emit(
+                app,
+                timeline,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Preparing {mode_name} mode plan with {} steps", steps.len()),
+                ),
+            );
+            dispatch_plan(command_id, mode_name, steps, app, timeline)
+        }
+    }
+}
+
+fn dispatch_plan<R: Runtime>(
+    command_id: &str,
+    mode_name: &str,
+    steps: &[crate::models::ResolvedPlanStep],
+    app: &AppHandle<R>,
+    timeline: &mut Vec<ExecutionEvent>,
+) -> Result<String, AppError> {
+    let mut parallel = steps
+        .iter()
+        .filter(|step| step.execution_group.starts_with("parallel"))
+        .collect::<Vec<_>>();
+    let sequential = steps
+        .iter()
+        .filter(|step| !step.execution_group.starts_with("parallel"))
+        .collect::<Vec<_>>();
+
+    parallel.sort_by(|a, b| a.label.cmp(&b.label));
+    for step in &parallel {
+        emit(
+            app,
+            timeline,
+            new_event(
+                command_id,
+                ExecutionEventKind::Progress,
+                format!("Starting parallel step: {}", step.label),
+            ),
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let handles = parallel
+            .into_iter()
+            .map(|step| {
+                let action = (*step.action).clone();
+                std::thread::spawn(move || dispatch_action_without_events(&action))
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            handle
+                .join()
+                .map_err(|_| AppError::ExecutionError("plan step panicked".to_string()))??;
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        for step in parallel {
+            dispatch_action(command_id, &step.action, app, timeline)?;
+        }
+    }
+
+    for step in sequential {
+        emit(
+            app,
+            timeline,
+            new_event(
+                command_id,
+                ExecutionEventKind::Progress,
+                format!("Running sequential step: {}", step.label),
+            ),
+        );
+        dispatch_action(command_id, &step.action, app, timeline)?;
+    }
+
+    Ok(format!("{mode_name} mode applied"))
+}
+
+#[cfg(target_os = "macos")]
+fn dispatch_action_without_events(action: &ResolvedAction) -> Result<String, AppError> {
+    match action {
+        ResolvedAction::OpenUrl {
+            url,
+            browser_bundle,
+            browser_name,
+        } => open_url(url, browser_bundle, browser_name),
+        ResolvedAction::OpenApp {
+            bundle_id,
+            app_name,
+        } => open_app(app_name, bundle_id),
+        ResolvedAction::AppleScriptTemplate {
+            script,
+            template_id,
+        } => {
+            preflight_applescript_template(template_id)?;
+            applescript::run_validated_script(script).map(|_| "Done".to_string())
+        }
+        ResolvedAction::OpenSystemPreferences { pane_url } => {
+            open_url(pane_url, "", "System Settings")
+        }
+        ResolvedAction::OpenPath { path } => open_path(path),
+        ResolvedAction::CreateFolder { path } => create_folder(path),
+        ResolvedAction::MovePath {
+            source_path,
+            destination_path,
+        } => move_path(source_path, destination_path),
+        ResolvedAction::QuitApp { .. }
+        | ResolvedAction::HideApp { .. }
+        | ResolvedAction::ForceQuitApp { .. }
+        | ResolvedAction::RunPlan { .. } => Err(AppError::ValidationError(
+            "Nested or destructive plan step is not allowed".to_string(),
+        )),
     }
 }
 
@@ -418,6 +571,76 @@ fn quit_app(app_name: &str, bundle_id: &str) -> Result<String, AppError> {
             "quit {app_name} exited with status {status}"
         )))
     }
+}
+
+#[cfg(target_os = "macos")]
+fn hide_app(app_name: &str, bundle_id: &str) -> Result<String, AppError> {
+    let script = if !bundle_id.is_empty() {
+        format!("tell application id \"{bundle_id}\" to hide")
+    } else {
+        format!("tell application \"{app_name}\" to hide")
+    };
+    let status = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .status()
+        .map_err(|e| AppError::ExecutionError(format!("hide failed: {e}")))?;
+    if status.success() {
+        Ok(format!("{app_name} hidden"))
+    } else {
+        Err(AppError::ExecutionError(format!(
+            "hide {app_name} exited with status {status}"
+        )))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hide_app(_app_name: &str, _bundle_id: &str) -> Result<String, AppError> {
+    Err(AppError::PlatformNotSupported(
+        "App hiding requires macOS".to_string(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn force_quit_app(app_name: &str, bundle_id: &str) -> Result<String, AppError> {
+    let script = format!(
+        "tell application \"System Events\" to get unix id of processes whose bundle identifier is \"{bundle_id}\""
+    );
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .map_err(|e| AppError::ExecutionError(format!("process lookup failed: {e}")))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let pid = stdout
+        .trim()
+        .trim_matches('{')
+        .trim_matches('}')
+        .split(',')
+        .next()
+        .map(str::trim)
+        .filter(|value| value.chars().all(|c| c.is_ascii_digit()))
+        .ok_or_else(|| AppError::ExecutionError(format!("{app_name} is not running")))?;
+
+    let status = std::process::Command::new("kill")
+        .arg("-TERM")
+        .arg(pid)
+        .status()
+        .map_err(|e| AppError::ExecutionError(format!("force quit failed: {e}")))?;
+    if status.success() {
+        Ok(format!("{app_name} force quit"))
+    } else {
+        Err(AppError::ExecutionError(format!(
+            "force quit {app_name} exited with status {status}"
+        )))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn force_quit_app(_app_name: &str, _bundle_id: &str) -> Result<String, AppError> {
+    Err(AppError::PlatformNotSupported(
+        "Force quit requires macOS".to_string(),
+    ))
 }
 
 #[cfg(not(target_os = "macos"))]
