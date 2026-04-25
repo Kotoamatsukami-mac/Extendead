@@ -2,25 +2,40 @@ use crate::service_catalog;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Intent {
-    OpenSafari,
-    OpenChrome,
-    OpenFirefox,
-    OpenBrave,
-    OpenArc,
-    OpenFinder,
-    OpenSlack,
+    OpenTarget(String),
     OpenService(String),
-    OpenServiceInBrowser { service_id: String, browser: String },
-    BrowserNewTab { browser: Option<String> },
-    BrowserCloseTab { browser: Option<String> },
-    BrowserReopenClosedTab { browser: Option<String> },
-    CloseAppNamed(String),
-    OpenAppNamed(String),
+    OpenServiceInBrowser {
+        service_id: String,
+        browser: String,
+    },
+    BrowserNewTab {
+        browser: Option<String>,
+    },
+    BrowserCloseTab {
+        browser: Option<String>,
+    },
+    BrowserReopenClosedTab {
+        browser: Option<String>,
+    },
+    CloseTarget(String),
+    HideTarget(String),
+    ForceQuitTarget(String),
     OpenPath(String),
-    CreateFolder { name: String, base: Option<String> },
-    MovePath { source: String, destination: String },
+    CreateFolder {
+        name: String,
+        base: Option<String>,
+    },
+    MovePath {
+        source: String,
+        destination: String,
+    },
+    RunMode(String),
     MuteVolume,
     SetVolume(u8),
+    AdjustVolume {
+        direction: VolumeDirection,
+        intensity: u8,
+    },
     OpenDisplaySettings,
     RevealDownloads,
     IncreaseBrightness,
@@ -28,6 +43,12 @@ pub enum Intent {
     TrashPath(String),
     DeletePathPermanently(String),
     Unknown(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum VolumeDirection {
+    Up,
+    Down,
 }
 
 pub fn parse_intent(raw: &str) -> Intent {
@@ -40,6 +61,14 @@ pub fn parse_intent(raw: &str) -> Intent {
 
     if matches_any(s, &["mute the mac", "mute sound", "mute audio", "mute"]) {
         return Intent::MuteVolume;
+    }
+
+    if let Some(intent) = extract_volume_adjust(s) {
+        return intent;
+    }
+
+    if let Some(mode) = extract_mode_name(s) {
+        return Intent::RunMode(mode);
     }
 
     if matches_any(
@@ -91,41 +120,6 @@ pub fn parse_intent(raw: &str) -> Intent {
         return Intent::DecreaseBrightness;
     }
 
-    if matches_any(s, &["open finder", "finder"]) {
-        return Intent::OpenFinder;
-    }
-
-    if matches_any(s, &["open slack", "slack"]) {
-        return Intent::OpenSlack;
-    }
-
-    if matches_any(s, &["open safari", "safari"]) {
-        return Intent::OpenSafari;
-    }
-    if matches_any(
-        s,
-        &[
-            "open chrome",
-            "open google chrome",
-            "chrome",
-            "google chrome",
-        ],
-    ) {
-        return Intent::OpenChrome;
-    }
-    if matches_any(s, &["open firefox", "firefox"]) {
-        return Intent::OpenFirefox;
-    }
-    if matches_any(
-        s,
-        &["open brave", "open brave browser", "brave", "brave browser"],
-    ) {
-        return Intent::OpenBrave;
-    }
-    if matches_any(s, &["open arc", "arc"]) {
-        return Intent::OpenArc;
-    }
-
     if let Some(intent) = extract_service_open_in_browser(raw) {
         return intent;
     }
@@ -150,8 +144,16 @@ pub fn parse_intent(raw: &str) -> Intent {
         return intent;
     }
 
+    if let Some(app) = extract_prefixed_target(raw, &["force quit ", "kill "]) {
+        return Intent::ForceQuitTarget(app);
+    }
+
+    if let Some(app) = extract_prefixed_target(raw, &["hide "]) {
+        return Intent::HideTarget(app);
+    }
+
     if let Some(app) = extract_close_app_name(raw) {
-        return Intent::CloseAppNamed(app);
+        return Intent::CloseTarget(app);
     }
 
     if let Some(path) = extract_open_path(raw) {
@@ -159,7 +161,11 @@ pub fn parse_intent(raw: &str) -> Intent {
     }
 
     if let Some(app) = extract_open_app_name(raw) {
-        return Intent::OpenAppNamed(app);
+        return Intent::OpenTarget(app);
+    }
+
+    if !s.is_empty() && !looks_like_url(s) && !looks_like_path(s) {
+        return Intent::OpenTarget(clean_token(raw));
     }
 
     Intent::Unknown(raw.to_string())
@@ -189,6 +195,91 @@ fn extract_volume_level(s: &str) -> Option<u8> {
         }
     }
     None
+}
+
+fn extract_volume_adjust(s: &str) -> Option<Intent> {
+    let down = [
+        "quieter",
+        "lower volume",
+        "volume down",
+        "turn volume down",
+        "turn it down",
+        "less loud",
+    ];
+    if down
+        .iter()
+        .any(|phrase| s == *phrase || s.starts_with(&format!("{phrase} ")))
+    {
+        return Some(Intent::AdjustVolume {
+            direction: VolumeDirection::Down,
+            intensity: 10,
+        });
+    }
+
+    let up = [
+        "louder",
+        "raise volume",
+        "volume up",
+        "turn volume up",
+        "turn it up",
+        "more loud",
+    ];
+    if up
+        .iter()
+        .any(|phrase| s == *phrase || s.starts_with(&format!("{phrase} ")))
+    {
+        return Some(Intent::AdjustVolume {
+            direction: VolumeDirection::Up,
+            intensity: 10,
+        });
+    }
+
+    None
+}
+
+fn extract_mode_name(normalized: &str) -> Option<String> {
+    let normalized = normalized.trim();
+    let reserved = ["dark", "safe", "recovery", "airplane", "do not disturb"];
+
+    for prefix in [
+        "run ",
+        "start ",
+        "activate ",
+        "enable ",
+        "switch to ",
+        "turn on ",
+    ] {
+        if let Some(rest) = normalized.strip_prefix(prefix) {
+            if let Some(mode) = rest.strip_suffix(" mode") {
+                let mode = clean_token(mode);
+                if mode_is_safe(&mode, &reserved) {
+                    return Some(mode);
+                }
+                return None;
+            }
+        }
+    }
+
+    if let Some(mode) = normalized.strip_prefix("mode ") {
+        let mode = clean_token(mode);
+        if mode_is_safe(&mode, &reserved) {
+            return Some(mode);
+        }
+        return None;
+    }
+
+    if let Some(mode) = normalized.strip_suffix(" mode") {
+        let mode = clean_token(mode);
+        if mode_is_safe(&mode, &reserved) {
+            return Some(mode);
+        }
+    }
+
+    None
+}
+
+fn mode_is_safe(mode: &str, reserved: &[&str]) -> bool {
+    !mode.is_empty() && !looks_like_path(mode) && !looks_like_url(mode) && !reserved.contains(&mode)
 }
 
 fn extract_service_open_in_browser(raw: &str) -> Option<Intent> {
@@ -232,9 +323,13 @@ fn extract_service_open(raw: &str) -> Option<String> {
 }
 
 fn extract_close_app_name(raw: &str) -> Option<String> {
+    extract_prefixed_target(raw, &["close ", "quit ", "exit "])
+}
+
+fn extract_prefixed_target(raw: &str, prefixes: &[&str]) -> Option<String> {
     let trimmed = raw.trim();
     let lower = normalize(trimmed);
-    for prefix in ["close ", "quit ", "exit "] {
+    for prefix in prefixes {
         if let Some(rest) = lower.strip_prefix(prefix) {
             let raw_rest = trimmed.get(prefix.len()..)?.trim();
             if !raw_rest.is_empty() {
@@ -258,6 +353,9 @@ fn extract_open_app_name(raw: &str) -> Option<String> {
                 return None;
             }
             if service_catalog::find_service_by_query(raw_rest).is_some() {
+                return None;
+            }
+            if normalize(raw_rest).ends_with(" mode") {
                 return None;
             }
             return Some(clean_token(raw_rest));
@@ -500,17 +598,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_browser_apps() {
-        assert_eq!(parse_intent("open safari"), Intent::OpenSafari);
-        assert_eq!(parse_intent("open google chrome"), Intent::OpenChrome);
-        assert_eq!(parse_intent("open firefox"), Intent::OpenFirefox);
-        assert_eq!(parse_intent("open brave browser"), Intent::OpenBrave);
-        assert_eq!(parse_intent("open arc"), Intent::OpenArc);
-    }
-
-    #[test]
-    fn test_parse_finder() {
-        assert_eq!(parse_intent("open finder"), Intent::OpenFinder);
+    fn test_parse_open_family_as_targets() {
+        for synonym in ["open", "launch", "start", "run"] {
+            assert_eq!(
+                parse_intent(&format!("{synonym} Example App")),
+                Intent::OpenTarget("Example App".to_string())
+            );
+        }
+        assert_eq!(
+            parse_intent("Example App"),
+            Intent::OpenTarget("Example App".to_string())
+        );
     }
 
     #[test]
@@ -540,7 +638,17 @@ mod tests {
             parse_intent("display settings"),
             Intent::OpenDisplaySettings
         );
-        assert_eq!(parse_intent("slack"), Intent::OpenSlack);
+        assert_eq!(
+            parse_intent("slack"),
+            Intent::OpenTarget("slack".to_string())
+        );
+        assert_eq!(
+            parse_intent("quieter"),
+            Intent::AdjustVolume {
+                direction: VolumeDirection::Down,
+                intensity: 10,
+            }
+        );
     }
 
     #[test]
@@ -563,7 +671,15 @@ mod tests {
     fn test_parse_close_app() {
         assert_eq!(
             parse_intent("close safari"),
-            Intent::CloseAppNamed("safari".to_string())
+            Intent::CloseTarget("safari".to_string())
+        );
+        assert_eq!(
+            parse_intent("hide signal"),
+            Intent::HideTarget("signal".to_string())
+        );
+        assert_eq!(
+            parse_intent("force quit signal"),
+            Intent::ForceQuitTarget("signal".to_string())
         );
     }
 
@@ -622,6 +738,26 @@ mod tests {
             Intent::IncreaseBrightness
         );
         assert_eq!(parse_intent("brightness down"), Intent::DecreaseBrightness);
+    }
+
+    #[test]
+    fn test_parse_mode_as_single_semantic_frame() {
+        assert_eq!(
+            parse_intent("study mode"),
+            Intent::RunMode("study".to_string())
+        );
+        assert_eq!(
+            parse_intent("run focus mode"),
+            Intent::RunMode("focus".to_string())
+        );
+        assert_eq!(
+            parse_intent("mode break"),
+            Intent::RunMode("break".to_string())
+        );
+        assert_eq!(
+            parse_intent("dark mode"),
+            Intent::OpenTarget("dark mode".to_string())
+        );
     }
 
     #[test]

@@ -101,6 +101,14 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     }
   }, []);
 
+  const refreshMachineInfo = useCallback(async (): Promise<MachineInfo | null> => {
+    try {
+      return await invoke<MachineInfo>('refresh_machine_info');
+    } catch {
+      return null;
+    }
+  }, []);
+
   const getPermissionStatus =
     useCallback(async (): Promise<PermissionStatus | null> => {
       try {
@@ -192,6 +200,7 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
     denyCommand,
     undoLast,
     getMachineInfo,
+    refreshMachineInfo,
     getPermissionStatus,
     getHistory,
     getServiceCatalog,

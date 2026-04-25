@@ -13,6 +13,8 @@ fn action_risk(action: &ResolvedAction, kind: &CommandKind) -> RiskLevel {
         ResolvedAction::OpenUrl { .. } => RiskLevel::R1,
         ResolvedAction::OpenApp { .. } => RiskLevel::R0,
         ResolvedAction::QuitApp { .. } => RiskLevel::R1,
+        ResolvedAction::HideApp { .. } => RiskLevel::R1,
+        ResolvedAction::ForceQuitApp { .. } => RiskLevel::R2,
         ResolvedAction::AppleScriptTemplate { template_id, .. } => {
             applescript_template_risk(template_id)
         }
@@ -23,6 +25,11 @@ fn action_risk(action: &ResolvedAction, kind: &CommandKind) -> RiskLevel {
         },
         ResolvedAction::CreateFolder { .. } => RiskLevel::R1,
         ResolvedAction::MovePath { .. } => RiskLevel::R2,
+        ResolvedAction::RunPlan { steps, .. } => steps
+            .iter()
+            .map(|step| action_risk(&step.action, kind))
+            .max()
+            .unwrap_or(RiskLevel::R0),
     }
 }
 
@@ -31,6 +38,7 @@ fn applescript_template_risk(template_id: &str) -> RiskLevel {
         "mute_volume"
         | "unmute_volume"
         | "set_volume"
+        | "adjust_volume"
         | "get_volume"
         | "browser_new_tab"
         | "browser_close_tab"
@@ -51,11 +59,13 @@ pub fn requires_approval(command: &ParsedCommand, risk: &RiskLevel) -> bool {
 fn requires_semantic_approval(command: &ParsedCommand) -> bool {
     command.routes.iter().any(|route| match &route.action {
         ResolvedAction::MovePath { .. } => true,
+        ResolvedAction::ForceQuitApp { .. } => true,
         ResolvedAction::AppleScriptTemplate { template_id, .. } => !matches!(
             template_id.as_str(),
             "mute_volume"
                 | "unmute_volume"
                 | "set_volume"
+                | "adjust_volume"
                 | "get_volume"
                 | "browser_new_tab"
                 | "browser_close_tab"
@@ -106,6 +116,7 @@ pub fn inverse_action(action: &ResolvedAction) -> Option<ResolvedAction> {
             bundle_id: bundle_id.clone(),
             app_name: app_name.clone(),
         }),
+        ResolvedAction::HideApp { .. } | ResolvedAction::ForceQuitApp { .. } => None,
         ResolvedAction::MovePath {
             source_path,
             destination_path,
@@ -113,6 +124,7 @@ pub fn inverse_action(action: &ResolvedAction) -> Option<ResolvedAction> {
             source_path: destination_path.clone(),
             destination_path: source_path.clone(),
         }),
+        ResolvedAction::RunPlan { .. } => None,
         _ => None,
     }
 }

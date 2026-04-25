@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use crate::machine;
 use crate::models::{
-    BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedRoute, UnresolvedCode,
+    AppInfo, BrowserInfo, CommandKind, MachineInfo, ResolvedAction, ResolvedPlanStep,
+    ResolvedRoute, RiskLevel, UnresolvedCode,
 };
-use crate::parser::Intent;
+use crate::parser::{Intent, VolumeDirection};
 use crate::service_catalog;
 
 type ResolveResult = (
@@ -16,20 +16,17 @@ type ResolveResult = (
 
 pub fn resolve(intent: &Intent, machine: &MachineInfo) -> ResolveResult {
     match intent {
-        Intent::OpenSafari => resolve_open_app(machine, "Safari", "com.apple.Safari"),
-        Intent::OpenChrome => resolve_open_app(machine, "Google Chrome", "com.google.Chrome"),
-        Intent::OpenFirefox => resolve_open_app(machine, "Firefox", "org.mozilla.firefox"),
-        Intent::OpenBrave => resolve_open_app(machine, "Brave", "com.brave.Browser"),
-        Intent::OpenArc => resolve_open_app(machine, "Arc", "company.thebrowser.Browser"),
-        Intent::OpenFinder => resolve_open_app(machine, "Finder", "com.apple.finder"),
-        Intent::OpenSlack => resolve_open_app(machine, "Slack", "com.tinyspeck.slackmacgap"),
+        Intent::OpenTarget(name) => resolve_target_named(machine, name, TargetOperation::Open),
         Intent::OpenService(service_id) => resolve_service(machine, service_id),
         Intent::OpenServiceInBrowser {
             service_id,
             browser,
         } => resolve_service_in_named_browser(machine, service_id, browser),
-        Intent::OpenAppNamed(name) => resolve_app_named(machine, name, false),
-        Intent::CloseAppNamed(name) => resolve_app_named(machine, name, true),
+        Intent::CloseTarget(name) => resolve_target_named(machine, name, TargetOperation::Close),
+        Intent::HideTarget(name) => resolve_target_named(machine, name, TargetOperation::Hide),
+        Intent::ForceQuitTarget(name) => {
+            resolve_target_named(machine, name, TargetOperation::ForceQuit)
+        }
         Intent::BrowserNewTab { browser } => resolve_browser_tab_shortcut(
             machine,
             browser.as_deref(),
@@ -62,6 +59,7 @@ pub fn resolve(intent: &Intent, machine: &MachineInfo) -> ResolveResult {
             source,
             destination,
         } => resolve_move_path(machine, source, destination),
+        Intent::RunMode(mode) => resolve_mode(machine, mode),
         Intent::TrashPath(path) => resolve_trash_path(machine, path),
         Intent::DeletePathPermanently(_) => (
             CommandKind::Filesystem,
@@ -77,6 +75,13 @@ pub fn resolve(intent: &Intent, machine: &MachineInfo) -> ResolveResult {
         Intent::DecreaseBrightness => resolve_brightness("brightness_down", "Decrease brightness"),
         Intent::SetVolume(level) => {
             let (kind, routes) = resolve_set_volume(*level);
+            (kind, routes, None, None)
+        }
+        Intent::AdjustVolume {
+            direction,
+            intensity,
+        } => {
+            let (kind, routes) = resolve_adjust_volume(*direction, *intensity);
             (kind, routes, None, None)
         }
         Intent::OpenDisplaySettings => {
@@ -261,67 +266,103 @@ fn browser_shortcut_script(bundle_id: &str, key: &str, modifiers: &[&str]) -> St
     )
 }
 
-fn resolve_open_app(machine: &MachineInfo, app_name: &str, bundle_id: &str) -> ResolveResult {
-    if !machine::is_app_installed(machine, bundle_id) {
-        return (
-            CommandKind::AppControl,
-            vec![],
-            Some(UnresolvedCode::AppNotInstalled),
-            Some(format!("{app_name} is not installed on this Mac.")),
-        );
-    }
-
-    (
-        CommandKind::AppControl,
-        vec![ResolvedRoute {
-            label: format!("Open {app_name}"),
-            description: format!("Launch {app_name}.app"),
-            action: ResolvedAction::OpenApp {
-                bundle_id: bundle_id.to_string(),
-                app_name: app_name.to_string(),
-            },
-        }],
-        None,
-        None,
-    )
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetOperation {
+    Open,
+    Close,
+    Hide,
+    ForceQuit,
 }
 
-fn resolve_app_named(machine: &MachineInfo, app_name: &str, should_quit: bool) -> ResolveResult {
-    let query = canonical_app_name(app_name);
-    let app = find_installed_app(machine, &query);
-    let Some((resolved_name, bundle_id)) = app else {
+#[derive(Debug, Clone)]
+struct AppMatch {
+    name: String,
+    bundle_id: String,
+    score: f32,
+}
+
+fn resolve_target_named(
+    machine: &MachineInfo,
+    target_name: &str,
+    operation: TargetOperation,
+) -> ResolveResult {
+    let query = target_name.trim();
+    let matches = find_installed_app_matches(machine, query);
+
+    if matches.is_empty() {
         return (
             CommandKind::AppControl,
             vec![],
             Some(UnresolvedCode::AppNotInstalled),
             Some(format!(
-                "{} is not installed on this Mac.",
-                display_name(&query)
+                "{} is not an installed app on this Mac.",
+                display_name(query)
             )),
         );
     };
 
-    let route = if should_quit {
-        ResolvedRoute {
-            label: format!("Close {resolved_name}"),
-            description: format!("Quit {resolved_name}"),
-            action: ResolvedAction::QuitApp {
-                bundle_id,
-                app_name: resolved_name,
-            },
-        }
-    } else {
-        ResolvedRoute {
-            label: format!("Open {resolved_name}"),
-            description: format!("Launch {resolved_name}.app"),
+    let best = &matches[0];
+    let ambiguous = matches
+        .get(1)
+        .map(|second| best.score < 0.86 || (best.score - second.score) < 0.08)
+        .unwrap_or(best.score < 0.78);
+    if ambiguous {
+        let choices = matches
+            .iter()
+            .take(3)
+            .map(|m| m.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return (
+            CommandKind::AppControl,
+            vec![],
+            Some(UnresolvedCode::AmbiguousTarget),
+            Some(format!(
+                "I found multiple possible apps for '{}': {}.",
+                query, choices
+            )),
+        );
+    }
+
+    let route = route_for_app(best.name.clone(), best.bundle_id.clone(), operation);
+    (CommandKind::AppControl, vec![route], None, None)
+}
+
+fn route_for_app(name: String, bundle_id: String, operation: TargetOperation) -> ResolvedRoute {
+    match operation {
+        TargetOperation::Open => ResolvedRoute {
+            label: format!("Open {name}"),
+            description: format!("Launch {name}.app"),
             action: ResolvedAction::OpenApp {
                 bundle_id,
-                app_name: resolved_name,
+                app_name: name,
             },
-        }
-    };
-
-    (CommandKind::AppControl, vec![route], None, None)
+        },
+        TargetOperation::Close => ResolvedRoute {
+            label: format!("Close {name}"),
+            description: format!("Quit {name}"),
+            action: ResolvedAction::QuitApp {
+                bundle_id,
+                app_name: name,
+            },
+        },
+        TargetOperation::Hide => ResolvedRoute {
+            label: format!("Hide {name}"),
+            description: format!("Hide {name} without quitting"),
+            action: ResolvedAction::HideApp {
+                bundle_id,
+                app_name: name,
+            },
+        },
+        TargetOperation::ForceQuit => ResolvedRoute {
+            label: format!("Force Quit {name}"),
+            description: format!("Force quit {name}"),
+            action: ResolvedAction::ForceQuitApp {
+                bundle_id,
+                app_name: name,
+            },
+        },
+    }
 }
 
 fn resolve_open_path(path: &str) -> ResolveResult {
@@ -589,6 +630,34 @@ fn resolve_set_volume(level: u8) -> (CommandKind, Vec<ResolvedRoute>) {
     (CommandKind::LocalSystem, routes)
 }
 
+fn resolve_adjust_volume(
+    direction: VolumeDirection,
+    intensity: u8,
+) -> (CommandKind, Vec<ResolvedRoute>) {
+    let delta = intensity.clamp(1, 25);
+    let script = match direction {
+        VolumeDirection::Up => format!(
+            "set currentVolume to output volume of (get volume settings)\nset volume output volume (currentVolume + {delta})"
+        ),
+        VolumeDirection::Down => format!(
+            "set currentVolume to output volume of (get volume settings)\nset volume output volume (currentVolume - {delta})"
+        ),
+    };
+    let label = match direction {
+        VolumeDirection::Up => "Make Mac louder",
+        VolumeDirection::Down => "Make Mac quieter",
+    };
+    let routes = vec![ResolvedRoute {
+        label: label.to_string(),
+        description: format!("Adjust system output volume by {delta}%"),
+        action: ResolvedAction::AppleScriptTemplate {
+            script,
+            template_id: "adjust_volume".to_string(),
+        },
+    }];
+    (CommandKind::LocalSystem, routes)
+}
+
 fn resolve_display_settings() -> (CommandKind, Vec<ResolvedRoute>) {
     let routes = vec![ResolvedRoute {
         label: "Open Display Settings".to_string(),
@@ -598,6 +667,111 @@ fn resolve_display_settings() -> (CommandKind, Vec<ResolvedRoute>) {
         },
     }];
     (CommandKind::LocalSystem, routes)
+}
+
+fn resolve_mode(machine: &MachineInfo, mode: &str) -> ResolveResult {
+    let canonical = mode.trim().to_lowercase();
+    let Some(mode_def) = mode_definition(&canonical) else {
+        return (
+            CommandKind::MixedWorkflow,
+            vec![],
+            Some(UnresolvedCode::UnsupportedCommand),
+            Some(format!("No ready mode named '{}' exists yet.", mode.trim())),
+        );
+    };
+
+    let mut steps = Vec::new();
+    for app_query in mode_def.open_apps {
+        if let Some(app) = find_installed_app_matches(machine, app_query).first() {
+            if app.score >= 0.78 {
+                steps.push(ResolvedPlanStep {
+                    label: format!("Open {}", app.name),
+                    description: format!("Launch {}", app.name),
+                    action: Box::new(ResolvedAction::OpenApp {
+                        bundle_id: app.bundle_id.clone(),
+                        app_name: app.name.clone(),
+                    }),
+                    execution_group: "parallel:setup".to_string(),
+                    risk: RiskLevel::R0,
+                    requires_approval: false,
+                });
+            }
+        }
+    }
+
+    if let Some(volume) = mode_def.volume {
+        steps.push(ResolvedPlanStep {
+            label: format!("Set volume to {volume}%"),
+            description: "Adjust system audio for this mode".to_string(),
+            action: Box::new(ResolvedAction::AppleScriptTemplate {
+                script: format!("set volume output volume {volume}"),
+                template_id: "set_volume".to_string(),
+            }),
+            execution_group: "parallel:setup".to_string(),
+            risk: RiskLevel::R1,
+            requires_approval: false,
+        });
+    }
+
+    if steps.is_empty() {
+        return (
+            CommandKind::MixedWorkflow,
+            vec![],
+            Some(UnresolvedCode::AppNotInstalled),
+            Some(format!(
+                "{} mode has no available app steps on this Mac.",
+                mode_def.display_name
+            )),
+        );
+    }
+
+    (
+        CommandKind::MixedWorkflow,
+        vec![ResolvedRoute {
+            label: format!("Run {} Mode", mode_def.display_name),
+            description: format!("Run {} coordinated steps", steps.len()),
+            action: ResolvedAction::RunPlan {
+                mode_name: mode_def.display_name.to_string(),
+                steps,
+            },
+        }],
+        None,
+        None,
+    )
+}
+
+struct ModeDefinition {
+    display_name: &'static str,
+    aliases: &'static [&'static str],
+    open_apps: &'static [&'static str],
+    volume: Option<u8>,
+}
+
+static MODE_DEFINITIONS: &[ModeDefinition] = &[
+    ModeDefinition {
+        display_name: "Study",
+        aliases: &["study", "focus study"],
+        open_apps: &["Notes", "Safari", "Visual Studio Code", "Finder"],
+        volume: Some(25),
+    },
+    ModeDefinition {
+        display_name: "Focus",
+        aliases: &["focus", "work", "deep work"],
+        open_apps: &["Visual Studio Code", "Notes", "Finder"],
+        volume: Some(15),
+    },
+    ModeDefinition {
+        display_name: "Break",
+        aliases: &["break", "rest", "chill"],
+        open_apps: &["Spotify", "Music", "Prime Video", "Safari"],
+        volume: Some(40),
+    },
+];
+
+fn mode_definition(mode: &str) -> Option<&'static ModeDefinition> {
+    MODE_DEFINITIONS
+        .iter()
+        .find(|candidate| candidate.aliases.contains(&mode))
 }
 
 fn resolve_brightness(template_id: &str, label: &str) -> ResolveResult {
@@ -639,44 +813,127 @@ fn resolve_downloads() -> (CommandKind, Vec<ResolvedRoute>) {
     (CommandKind::Filesystem, routes)
 }
 
-fn find_installed_app(machine: &MachineInfo, query: &str) -> Option<(String, String)> {
-    let canonical = canonical_app_name(query);
-
-    for app in &machine.installed_apps {
-        if canonical_app_name(&app.name) == canonical {
-            return Some((app.name.clone(), app.bundle_id.clone()));
-        }
-    }
-
-    for browser in &machine.installed_browsers {
-        if canonical_app_name(&browser.name) == canonical {
-            return Some((browser.name.clone(), browser.bundle_id.clone()));
-        }
-    }
-
-    None
-}
-
 fn find_installed_browser(machine: &MachineInfo, query: &str) -> Option<(String, String)> {
-    let canonical = canonical_app_name(query);
-    machine
+    let mut matches = machine
         .installed_browsers
         .iter()
-        .find(|browser| canonical_app_name(&browser.name) == canonical)
-        .map(|browser| (browser.name.clone(), browser.bundle_id.clone()))
+        .flat_map(|browser| {
+            app_aliases(&browser.name)
+                .into_iter()
+                .map(move |alias| (browser, fuzzy_score(query, &alias)))
+        })
+        .filter(|(_, score)| *score >= 0.78)
+        .collect::<Vec<_>>();
+    matches.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let (browser, score) = matches.first()?;
+    let ambiguous = matches
+        .get(1)
+        .map(|(_, second_score)| (*score - *second_score) < 0.08)
+        .unwrap_or(false);
+    if ambiguous {
+        None
+    } else {
+        Some((browser.name.clone(), browser.bundle_id.clone()))
+    }
 }
 
-fn canonical_app_name(name: &str) -> String {
-    match name.trim().to_lowercase().as_str() {
-        "chrome" | "google chrome" => "google chrome".to_string(),
-        "safari" => "safari".to_string(),
-        "firefox" => "firefox".to_string(),
-        "brave" | "brave browser" => "brave".to_string(),
-        "arc" => "arc".to_string(),
-        "finder" => "finder".to_string(),
-        "slack" => "slack".to_string(),
-        other => other.to_string(),
+fn find_installed_app_matches(machine: &MachineInfo, query: &str) -> Vec<AppMatch> {
+    let mut matches = all_installed_apps(machine)
+        .into_iter()
+        .filter_map(|app| {
+            let score = app_aliases(&app.name)
+                .into_iter()
+                .map(|alias| fuzzy_score(query, &alias))
+                .fold(0.0_f32, f32::max);
+            (score >= 0.70).then_some(AppMatch {
+                name: app.name,
+                bundle_id: app.bundle_id,
+                score,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    matches.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    matches
+}
+
+fn all_installed_apps(machine: &MachineInfo) -> Vec<AppInfo> {
+    let mut apps = machine.installed_apps.clone();
+    apps.extend(machine.installed_browsers.iter().map(|browser| AppInfo {
+        name: browser.name.clone(),
+        bundle_id: browser.bundle_id.clone(),
+        path: browser.path.clone(),
+    }));
+    apps
+}
+
+fn app_aliases(name: &str) -> Vec<String> {
+    let normalized = parser_normalize_name(name);
+    let mut aliases = vec![normalized.clone()];
+    if let Some(stripped) = normalized.strip_suffix(" browser") {
+        aliases.push(stripped.to_string());
     }
+    if normalized == "google chrome" {
+        aliases.push("chrome".to_string());
+    }
+    if normalized == "visual studio code" {
+        aliases.push("vscode".to_string());
+        aliases.push("code".to_string());
+    }
+    aliases.sort();
+    aliases.dedup();
+    aliases
+}
+
+fn parser_normalize_name(name: &str) -> String {
+    crate::parser::normalize(name)
+        .trim_end_matches(".app")
+        .trim()
+        .to_string()
+}
+
+fn fuzzy_score(query: &str, candidate: &str) -> f32 {
+    let q = parser_normalize_name(query);
+    let c = parser_normalize_name(candidate);
+    if q.is_empty() || c.is_empty() {
+        return 0.0;
+    }
+    if q == c {
+        return 1.0;
+    }
+    if c.starts_with(&q) {
+        return 0.94 - ((c.len().saturating_sub(q.len())) as f32 * 0.01).min(0.12);
+    }
+    if c.contains(&q) {
+        return 0.84;
+    }
+
+    let distance = edit_distance(&q, &c);
+    let max_len = q.chars().count().max(c.chars().count()) as f32;
+    (1.0 - (distance as f32 / max_len)).clamp(0.0, 1.0)
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a = a.chars().collect::<Vec<_>>();
+    let b = b.chars().collect::<Vec<_>>();
+    let mut prev = (0..=b.len()).collect::<Vec<_>>();
+    let mut curr = vec![0; b.len() + 1];
+
+    for (i, ca) in a.iter().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            curr[j + 1] = (curr[j] + 1).min(prev[j + 1] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b.len()]
 }
 
 fn display_name(name: &str) -> String {
@@ -755,6 +1012,129 @@ mod tests {
         }
     }
 
+    fn app_machine() -> MachineInfo {
+        MachineInfo {
+            hostname: "test".to_string(),
+            username: "test".to_string(),
+            os_version: "14".to_string(),
+            architecture: "arm64".to_string(),
+            installed_browsers: vec![BrowserInfo {
+                name: "Example Browser".to_string(),
+                bundle_id: "com.example.Browser".to_string(),
+                path: "/Applications/Example Browser.app".to_string(),
+            }],
+            installed_apps: vec![
+                AppInfo {
+                    name: "Signal".to_string(),
+                    bundle_id: "org.signal.Signal".to_string(),
+                    path: "/Applications/Signal.app".to_string(),
+                },
+                AppInfo {
+                    name: "Notes Plus".to_string(),
+                    bundle_id: "com.example.NotesPlus".to_string(),
+                    path: "/Applications/Notes Plus.app".to_string(),
+                },
+            ],
+            home_dir: "/Users/test".to_string(),
+        }
+    }
+
+    #[test]
+    fn open_operator_family_resolves_to_same_app_action() {
+        let machine = app_machine();
+        for synonym in ["open", "launch", "start", "run"] {
+            let intent = crate::parser::parse_intent(&format!("{synonym} Signal"));
+            let (_kind, routes, unresolved_code, _msg) = resolve(&intent, &machine);
+            assert!(unresolved_code.is_none(), "{synonym} should resolve");
+            assert_eq!(routes.len(), 1);
+            match &routes[0].action {
+                ResolvedAction::OpenApp {
+                    bundle_id,
+                    app_name,
+                } => {
+                    assert_eq!(bundle_id, "org.signal.Signal");
+                    assert_eq!(app_name, "Signal");
+                }
+                other => panic!("expected open app route, got {other:?}"),
+            }
+        }
+
+        let (_kind, routes, unresolved_code, _msg) =
+            resolve(&crate::parser::parse_intent("Signal"), &machine);
+        assert!(unresolved_code.is_none());
+        assert!(matches!(routes[0].action, ResolvedAction::OpenApp { .. }));
+    }
+
+    #[test]
+    fn one_edit_app_typos_resolve_only_when_unique() {
+        let machine = app_machine();
+        for typo in one_edit_variants("Signal").into_iter().take(12) {
+            let (_kind, routes, unresolved_code, _msg) =
+                resolve(&Intent::OpenTarget(typo), &machine);
+            assert!(unresolved_code.is_none());
+            match &routes[0].action {
+                ResolvedAction::OpenApp { bundle_id, .. } => {
+                    assert_eq!(bundle_id, "org.signal.Signal");
+                }
+                other => panic!("expected open app route, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn ambiguous_app_matches_request_clarification_instead_of_guessing() {
+        let mut machine = app_machine();
+        machine.installed_apps.push(AppInfo {
+            name: "Signal Beta".to_string(),
+            bundle_id: "org.signal.Beta".to_string(),
+            path: "/Applications/Signal Beta.app".to_string(),
+        });
+
+        let (_kind, routes, unresolved_code, _msg) =
+            resolve(&Intent::OpenTarget("Sig".to_string()), &machine);
+        assert!(routes.is_empty());
+        assert_eq!(unresolved_code, Some(UnresolvedCode::AmbiguousTarget));
+    }
+
+    #[test]
+    fn volume_family_normalizes_set_and_relative_actions() {
+        for n in [0, 1, 25, 50, 99, 100] {
+            let intent = crate::parser::parse_intent(&format!("set volume to {n}"));
+            let (_kind, routes, unresolved_code, _msg) = resolve(&intent, &app_machine());
+            assert!(unresolved_code.is_none());
+            assert!(matches!(
+                routes[0].action,
+                ResolvedAction::AppleScriptTemplate { ref template_id, .. } if template_id == "set_volume"
+            ));
+        }
+
+        let (_kind, routes, unresolved_code, _msg) =
+            resolve(&crate::parser::parse_intent("quieter"), &app_machine());
+        assert!(unresolved_code.is_none());
+        assert!(matches!(
+            routes[0].action,
+            ResolvedAction::AppleScriptTemplate { ref template_id, .. } if template_id == "adjust_volume"
+        ));
+    }
+
+    #[test]
+    fn mode_activation_is_one_route_with_step_plan() {
+        let machine = app_machine();
+        let (_kind, routes, unresolved_code, _msg) =
+            resolve(&crate::parser::parse_intent("study mode"), &machine);
+        assert!(unresolved_code.is_none());
+        assert_eq!(routes.len(), 1);
+        match &routes[0].action {
+            ResolvedAction::RunPlan { steps, .. } => {
+                assert!(!steps.is_empty());
+                assert!(steps
+                    .iter()
+                    .any(|step| step.execution_group.starts_with("parallel")));
+            }
+            other => panic!("expected plan route, got {other:?}"),
+        }
+    }
+
     #[test]
     fn browser_new_tab_generates_route() {
         let machine = test_machine();
@@ -781,5 +1161,25 @@ mod tests {
             Some(UnresolvedCode::PermanentDeleteBlocked)
         );
         assert!(msg.unwrap_or_default().contains("Permanent delete"));
+    }
+
+    fn one_edit_variants(input: &str) -> Vec<String> {
+        let chars = input.chars().collect::<Vec<_>>();
+        let mut variants = Vec::new();
+        for i in 0..chars.len() {
+            let mut delete = chars.clone();
+            delete.remove(i);
+            variants.push(delete.iter().collect());
+
+            let mut substitute = chars.clone();
+            substitute[i] = 'x';
+            variants.push(substitute.iter().collect());
+        }
+        for i in 0..chars.len().saturating_sub(1) {
+            let mut transpose = chars.clone();
+            transpose.swap(i, i + 1);
+            variants.push(transpose.iter().collect());
+        }
+        variants
     }
 }

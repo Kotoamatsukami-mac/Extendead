@@ -35,6 +35,10 @@ const BUILT_IN_PREDICTIONS = [
   'open chrome',
   'open finder',
   'open slack',
+  'study mode',
+  'focus mode',
+  'break mode',
+  'quieter',
   'display settings',
   'downloads',
   'set volume to 40',
@@ -130,7 +134,7 @@ export function App() {
 
       if (cmd.routes.length === 1) {
         setSelectedRouteIndex(0);
-        if (cmd.requires_approval) {
+        if (cmd.requires_approval || isPlanRoute(cmd.routes[0])) {
           setMode('expanded');
           setExecState('awaiting_confirm');
         } else {
@@ -223,13 +227,13 @@ export function App() {
     const timer = window.setTimeout(() => {
       bridge.suggestCommands(normalized).then((nextSuggestions) => {
         if (suggestionRequestRef.current === requestId) {
-          setSuggestions(nextSuggestions);
+          setSuggestions(rankSuggestions(nextSuggestions, history));
         }
       });
     }, 90);
 
     return () => window.clearTimeout(timer);
-  }, [bridge, inputValue, resultFeedback]);
+  }, [bridge, history, inputValue, resultFeedback]);
 
   const refreshDeveloperStatus = useCallback(async () => {
     setDeveloperBusy(true);
@@ -293,7 +297,8 @@ export function App() {
     (index: number) => {
       setSelectedRouteIndex(index);
       if (!parsedCommand) return;
-      if (parsedCommand.requires_approval) {
+      const selectedRoute = parsedCommand.routes[index];
+      if (parsedCommand.requires_approval || isPlanRoute(selectedRoute)) {
         setExecState('awaiting_confirm');
       } else {
         setExecState('executing');
@@ -430,6 +435,10 @@ export function App() {
         }
       });
     };
+    const refreshFocusedMachineTruth = () => {
+      refreshConfig();
+      void bridge.refreshMachineInfo();
+    };
 
     refreshConfig();
     const interval = window.setInterval(() => {
@@ -438,11 +447,11 @@ export function App() {
       }
     }, 15_000);
 
-    window.addEventListener('focus', refreshConfig);
+    window.addEventListener('focus', refreshFocusedMachineTruth);
     document.addEventListener('visibilitychange', refreshConfig);
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener('focus', refreshConfig);
+      window.removeEventListener('focus', refreshFocusedMachineTruth);
       document.removeEventListener('visibilitychange', refreshConfig);
     };
   }, [bridge]);
@@ -532,6 +541,37 @@ function getPrediction(inputValue: string, history: HistoryEntry[]): string {
   return '';
 }
 
+function rankSuggestions(
+  suggestions: CommandSuggestion[],
+  history: HistoryEntry[],
+): CommandSuggestion[] {
+  if (suggestions.length <= 1 || history.length === 0) return suggestions;
+  const nowHour = new Date().getHours();
+
+  return [...suggestions].sort((a, b) => {
+    return scoreSuggestion(b, history, nowHour) - scoreSuggestion(a, history, nowHour);
+  });
+}
+
+function scoreSuggestion(
+  suggestion: CommandSuggestion,
+  history: HistoryEntry[],
+  nowHour: number,
+): number {
+  const canonical = suggestion.canonical.toLowerCase();
+  return history.reduce((score, entry, index) => {
+    const raw = entry.command.raw_input.toLowerCase();
+    const recency = Math.max(0, history.length - index) / history.length;
+    const hour = new Date(entry.timestamp).getHours();
+    const sameHour = Math.abs(hour - nowHour) <= 1 ? 0.35 : 0;
+    if (raw === canonical) return score + 2 + recency + sameHour;
+    if (raw.startsWith(canonical) || canonical.startsWith(raw)) {
+      return score + 0.8 + recency * 0.5 + sameHour;
+    }
+    return score;
+  }, 0);
+}
+
 function getUnresolvedMessage(cmd: ParsedCommand): string {
   switch (cmd.unresolved_code) {
     case 'unsupported_command':
@@ -556,6 +596,10 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
       return cmd.unresolved_message?.trim() || 'The destination parent folder does not exist.';
     case 'permanent_delete_blocked':
       return cmd.unresolved_message?.trim() || 'Permanent delete is blocked. Use trash <path> instead.';
+    case 'ambiguous_target':
+      return cmd.unresolved_message?.trim() || 'That target is ambiguous. Type a little more of the app name.';
+    case 'provider_configuration_required':
+      return cmd.unresolved_message?.trim() || 'Link a provider in the engine panel for broader interpretation.';
     default:
       break;
   }
@@ -576,4 +620,8 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
     default:
       return 'I could not resolve a safe local route for that command.';
   }
+}
+
+function isPlanRoute(route: ParsedCommand['routes'][number] | undefined): boolean {
+  return route?.action.type === 'run_plan';
 }

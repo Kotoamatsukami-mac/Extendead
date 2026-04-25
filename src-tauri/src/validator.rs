@@ -10,6 +10,7 @@ static APPROVED_TEMPLATE_IDS: &[&str] = &[
     "mute_volume",
     "unmute_volume",
     "set_volume",
+    "adjust_volume",
     "get_volume",
     "browser_new_tab",
     "browser_close_tab",
@@ -33,9 +34,10 @@ pub fn validate(command: &ParsedCommand, route_index: usize) -> Result<(), AppEr
 pub fn validate_action(action: &ResolvedAction) -> Result<(), AppError> {
     match action {
         ResolvedAction::OpenUrl { url, .. } => validate_url(url),
-        ResolvedAction::OpenApp { bundle_id, .. } | ResolvedAction::QuitApp { bundle_id, .. } => {
-            validate_bundle_id(bundle_id)
-        }
+        ResolvedAction::OpenApp { bundle_id, .. }
+        | ResolvedAction::QuitApp { bundle_id, .. }
+        | ResolvedAction::HideApp { bundle_id, .. }
+        | ResolvedAction::ForceQuitApp { bundle_id, .. } => validate_bundle_id(bundle_id),
         ResolvedAction::AppleScriptTemplate { template_id, .. } => {
             if !APPROVED_TEMPLATE_IDS.contains(&template_id.as_str()) {
                 return Err(AppError::ValidationError(format!(
@@ -52,6 +54,17 @@ pub fn validate_action(action: &ResolvedAction) -> Result<(), AppError> {
             source_path,
             destination_path,
         } => validate_move_path(source_path, destination_path),
+        ResolvedAction::RunPlan { steps, .. } => {
+            if steps.is_empty() {
+                return Err(AppError::ValidationError(
+                    "Plan must contain at least one step".to_string(),
+                ));
+            }
+            for step in steps {
+                validate_action(&step.action)?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -175,9 +188,9 @@ mod tests {
     }
 
     #[test]
-    fn unapproved_bundle_id_is_rejected() {
+    fn malformed_bundle_id_is_rejected() {
         let action = ResolvedAction::QuitApp {
-            bundle_id: "com.evil.app".to_string(),
+            bundle_id: "com.evil.app;rm".to_string(),
             app_name: "Evil".to_string(),
         };
         let err = validate_action(&action).unwrap_err();
