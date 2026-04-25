@@ -11,7 +11,8 @@ use crate::intent_ontology;
 use crate::models::MachineInfo;
 use crate::{parser, provider_keys, service_catalog};
 
-const PROVIDER_NAME: &str = "perplexity";
+pub const PRIMARY_PROVIDER_NAME: &str = "perplexity";
+pub const PROVIDER_HTTP_TIMEOUT_SECS: u64 = 4;
 const PROVIDER_MODEL: &str = "sonar-pro";
 const PROVIDER_ENDPOINT: &str = "https://api.perplexity.ai/v1/sonar";
 
@@ -48,9 +49,9 @@ pub async fn interpret(
     input: &str,
     machine: &MachineInfo,
 ) -> Result<Vec<CandidateIntent>, AppError> {
-    let key = provider_keys::retrieve_key(PROVIDER_NAME)?;
+    let key = provider_keys::retrieve_key(PRIMARY_PROVIDER_NAME)?;
     let client = Client::builder()
-        .timeout(Duration::from_secs(8))
+        .timeout(Duration::from_secs(PROVIDER_HTTP_TIMEOUT_SECS))
         .build()
         .map_err(|e| AppError::ExecutionError(format!("provider client init failed: {e}")))?;
 
@@ -623,6 +624,11 @@ mod tests {
             }],
             home_dir: "/Users/tester".to_string(),
         }
+    }
+
+    #[test]
+    fn provider_timeout_is_hardened_to_four_seconds() {
+        assert_eq!(PROVIDER_HTTP_TIMEOUT_SECS, 4);
     }
 
     #[test]

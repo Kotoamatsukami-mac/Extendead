@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use tauri::AppHandle;
 #[cfg(debug_assertions)]
 use tauri::Emitter;
@@ -16,7 +16,12 @@ use crate::{
     arbiter, executor, history, interpret_local, machine, parser, permissions,
     provider_interpreter, provider_keys, resolver, risk,
 };
-use crate::{service_catalog, AppState, APP_CONFIG_MAX_HISTORY};
+use crate::{
+    service_catalog, AppState, AppStateInner, PendingCommandEntry, APP_CONFIG_MAX_HISTORY,
+};
+
+const PENDING_COMMAND_TTL_SECS: i64 = 5 * 60;
+const PENDING_COMMAND_MAX_ENTRIES: usize = 32;
 
 struct InterpretationSurface {
     decision: Option<InterpretationDecision>,
@@ -151,10 +156,20 @@ fn surface_has_guidance(surface: &InterpretationSurface) -> bool {
         || surface.clarification_message.is_some()
 }
 
-fn should_attempt_provider(command: &ParsedCommand, local_surface: &InterpretationSurface) -> bool {
-    command.routes.is_empty()
-        && local_surface.clarification_slots.is_empty()
-        && local_surface.choices.is_empty()
+fn local_requests_follow_up(surface: &InterpretationSurface) -> bool {
+    matches!(
+        surface.decision,
+        Some(InterpretationDecision::Clarify | InterpretationDecision::OfferChoices)
+    ) || !surface.clarification_slots.is_empty()
+        || !surface.choices.is_empty()
+}
+
+fn should_attempt_provider(
+    command: &ParsedCommand,
+    local_surface: &InterpretationSurface,
+    provider_configured: bool,
+) -> bool {
+    provider_configured && command.routes.is_empty() && !local_requests_follow_up(local_surface)
 }
 
 fn apply_surface_fields(command: &mut ParsedCommand, surface: &InterpretationSurface) {
@@ -177,6 +192,29 @@ fn append_provider_hint(command: &mut ParsedCommand) {
         _ => {
             command.unresolved_message = Some(hint.to_string());
         }
+    }
+}
+
+fn cleanup_pending_commands(inner: &mut AppStateInner, now: DateTime<Utc>) {
+    let cutoff = now - Duration::seconds(PENDING_COMMAND_TTL_SECS);
+    inner
+        .pending_commands
+        .retain(|_, entry| entry.created_at >= cutoff);
+
+    if inner.pending_commands.len() <= PENDING_COMMAND_MAX_ENTRIES {
+        return;
+    }
+
+    let mut oldest_first = inner
+        .pending_commands
+        .iter()
+        .map(|(id, entry)| (id.clone(), entry.created_at))
+        .collect::<Vec<_>>();
+    oldest_first.sort_by_key(|(_, created_at)| *created_at);
+
+    let remove_count = oldest_first.len() - PENDING_COMMAND_MAX_ENTRIES;
+    for (id, _) in oldest_first.into_iter().take(remove_count) {
+        inner.pending_commands.remove(&id);
     }
 }
 
@@ -655,7 +693,10 @@ pub async fn parse_command(
         cmd.unresolved_message = Some("Multiple actions look plausible.".to_string());
     }
 
-    if should_attempt_provider(&cmd, &local_surface) {
+    let provider_eligible = cmd.routes.is_empty() && !local_requests_follow_up(&local_surface);
+    let provider_configured = provider_eligible
+        && provider_keys::is_provider_configured(provider_interpreter::PRIMARY_PROVIDER_NAME);
+    if should_attempt_provider(&cmd, &local_surface, provider_configured) {
         match provider_interpretation_surface(&cmd.raw_input, &machine_info).await {
             Ok(provider_surface) => {
                 if let Some(provider_intent) = provider_surface.chosen_intent.clone() {
@@ -676,21 +717,28 @@ pub async fn parse_command(
                     apply_surface_fields(&mut cmd, &provider_surface);
                 }
             }
-            Err(AppError::NotFound(_)) => {
-                append_provider_hint(&mut cmd);
-            }
             Err(err) => {
                 log::warn!("provider interpretation unavailable: {err}");
             }
         }
+    } else if provider_eligible && !provider_configured {
+        append_provider_hint(&mut cmd);
     }
 
     let cmd = risk::annotate(cmd);
 
     // Store in pending map.
     {
+        let now = Utc::now();
         let mut inner = state.inner.lock().map_err(|_| "state lock error")?;
-        inner.pending_commands.insert(cmd.id.clone(), cmd.clone());
+        inner.pending_commands.insert(
+            cmd.id.clone(),
+            PendingCommandEntry {
+                command: cmd.clone(),
+                created_at: now,
+            },
+        );
+        cleanup_pending_commands(&mut inner, now);
     }
 
     Ok(cmd)
@@ -711,7 +759,7 @@ pub async fn execute_command(
         inner
             .pending_commands
             .get(&command_id)
-            .cloned()
+            .map(|entry| entry.command.clone())
             .ok_or_else(|| format!("command '{command_id}' not found in pending map"))?
     };
 
@@ -756,12 +804,12 @@ pub async fn approve_command(
     state: tauri::State<'_, AppState>,
 ) -> Result<ParsedCommand, String> {
     let mut inner = state.inner.lock().map_err(|_| "state lock error")?;
-    let cmd = inner
+    let entry = inner
         .pending_commands
         .get_mut(&command_id)
         .ok_or_else(|| format!("command '{command_id}' not found"))?;
-    cmd.approval_status = ApprovalStatus::Approved;
-    Ok(cmd.clone())
+    entry.command.approval_status = ApprovalStatus::Approved;
+    Ok(entry.command.clone())
 }
 
 // ── deny_command ──────────────────────────────────────────────────────────────
@@ -772,8 +820,8 @@ pub async fn deny_command(
     state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
     let mut inner = state.inner.lock().map_err(|_| "state lock error")?;
-    if let Some(cmd) = inner.pending_commands.get_mut(&command_id) {
-        cmd.approval_status = ApprovalStatus::Denied;
+    if let Some(entry) = inner.pending_commands.get_mut(&command_id) {
+        entry.command.approval_status = ApprovalStatus::Denied;
         inner.pending_commands.remove(&command_id);
     }
     Ok(())
@@ -972,7 +1020,7 @@ pub async fn delete_provider_key(provider: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use crate::intent_language::{ExecutorFamily, IntentFamily, InterpretationSource};
     use crate::models::{InterpretationDecision, RiskLevel};
@@ -1009,6 +1057,50 @@ mod tests {
         c.clarification_needed = !c.missing_slots.is_empty();
         c.confidence = confidence;
         c
+    }
+
+    fn parsed_command_fixture(id: &str) -> ParsedCommand {
+        ParsedCommand {
+            id: id.to_string(),
+            raw_input: "do the thing".to_string(),
+            normalized: "do the thing".to_string(),
+            kind: crate::models::CommandKind::Unknown,
+            routes: vec![],
+            risk: RiskLevel::R0,
+            requires_approval: false,
+            approval_status: ApprovalStatus::NotRequired,
+            unresolved_code: None,
+            unresolved_message: None,
+            interpretation_decision: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
+        }
+    }
+
+    fn pending_entry(id: &str, created_at: DateTime<Utc>) -> PendingCommandEntry {
+        PendingCommandEntry {
+            command: parsed_command_fixture(id),
+            created_at,
+        }
+    }
+
+    fn pending_inner() -> AppStateInner {
+        AppStateInner {
+            machine_info: None,
+            pending_commands: HashMap::new(),
+            history: vec![],
+        }
+    }
+
+    fn dead_end_surface() -> InterpretationSurface {
+        InterpretationSurface {
+            decision: Some(InterpretationDecision::Deny),
+            chosen_intent: None,
+            clarification_message: None,
+            clarification_slots: vec![],
+            choices: vec![],
+        }
     }
 
     #[test]
@@ -1109,31 +1201,36 @@ mod tests {
     }
 
     #[test]
-    fn provider_attempts_only_when_local_path_is_still_dead_end() {
-        let local_surface = InterpretationSurface {
-            decision: Some(InterpretationDecision::Deny),
-            chosen_intent: None,
-            clarification_message: None,
-            clarification_slots: vec![],
-            choices: vec![],
-        };
-        let command = ParsedCommand {
-            id: "test".to_string(),
-            raw_input: "do the thing".to_string(),
-            normalized: "do the thing".to_string(),
-            kind: crate::models::CommandKind::Unknown,
-            routes: vec![],
-            risk: RiskLevel::R0,
-            requires_approval: false,
-            approval_status: ApprovalStatus::NotRequired,
-            unresolved_code: None,
-            unresolved_message: None,
-            interpretation_decision: None,
-            clarification_message: None,
-            clarification_slots: vec![],
-            choices: vec![],
-        };
-        assert!(should_attempt_provider(&command, &local_surface));
+    fn provider_configured_path_remains_reachable() {
+        let local_surface = dead_end_surface();
+        let command = parsed_command_fixture("test");
+        assert!(should_attempt_provider(&command, &local_surface, true));
+    }
+
+    #[test]
+    fn provider_not_configured_does_not_attempt_provider_interpreter() {
+        let local_surface = dead_end_surface();
+        let command = parsed_command_fixture("test");
+        assert!(!should_attempt_provider(&command, &local_surface, false));
+    }
+
+    #[test]
+    fn unresolved_local_command_gets_provider_hint_when_provider_missing() {
+        let local_surface = dead_end_surface();
+        let mut command = parsed_command_fixture("test");
+        command.unresolved_message =
+            Some("That command is outside current local coverage.".to_string());
+        let provider_configured = false;
+
+        if !provider_configured
+            && command.routes.is_empty()
+            && !local_requests_follow_up(&local_surface)
+        {
+            append_provider_hint(&mut command);
+        }
+
+        let unresolved = command.unresolved_message.unwrap_or_default();
+        assert!(unresolved.contains("Link a provider in the engine panel"));
     }
 
     #[test]
@@ -1161,6 +1258,90 @@ mod tests {
             clarification_slots: vec![],
             choices: vec![],
         };
-        assert!(!should_attempt_provider(&command, &local_surface));
+        assert!(!should_attempt_provider(&command, &local_surface, true));
+    }
+
+    #[test]
+    fn expired_pending_command_is_removed() {
+        let now = Utc::now();
+        let mut inner = pending_inner();
+        let id = "expired";
+        inner.pending_commands.insert(
+            id.to_string(),
+            pending_entry(id, now - Duration::seconds(PENDING_COMMAND_TTL_SECS + 1)),
+        );
+
+        cleanup_pending_commands(&mut inner, now);
+        assert!(!inner.pending_commands.contains_key(id));
+    }
+
+    #[test]
+    fn non_expired_pending_command_remains() {
+        let now = Utc::now();
+        let mut inner = pending_inner();
+        let id = "fresh";
+        inner.pending_commands.insert(
+            id.to_string(),
+            pending_entry(id, now - Duration::seconds(30)),
+        );
+
+        cleanup_pending_commands(&mut inner, now);
+        assert!(inner.pending_commands.contains_key(id));
+    }
+
+    #[test]
+    fn cap_eviction_removes_oldest_entries_first() {
+        let now = Utc::now();
+        let mut inner = pending_inner();
+        let total = PENDING_COMMAND_MAX_ENTRIES + 3;
+
+        for index in 0..total {
+            let id = format!("cmd-{index}");
+            let created_at = now - Duration::seconds((total - index) as i64);
+            inner
+                .pending_commands
+                .insert(id.clone(), pending_entry(&id, created_at));
+        }
+
+        cleanup_pending_commands(&mut inner, now);
+
+        assert_eq!(inner.pending_commands.len(), PENDING_COMMAND_MAX_ENTRIES);
+        assert!(!inner.pending_commands.contains_key("cmd-0"));
+        assert!(!inner.pending_commands.contains_key("cmd-1"));
+        assert!(!inner.pending_commands.contains_key("cmd-2"));
+        assert!(inner
+            .pending_commands
+            .contains_key(&format!("cmd-{}", total - 1)));
+    }
+
+    #[test]
+    fn approve_and_execute_paths_still_find_valid_pending_command() {
+        let now = Utc::now();
+        let mut inner = pending_inner();
+        let id = "approve-flow";
+        inner.pending_commands.insert(
+            id.to_string(),
+            pending_entry(id, now - Duration::seconds(10)),
+        );
+
+        cleanup_pending_commands(&mut inner, now);
+
+        let approved = inner
+            .pending_commands
+            .get_mut(id)
+            .expect("pending command should exist for approval");
+        approved.command.approval_status = ApprovalStatus::Approved;
+
+        let execution_lookup = inner
+            .pending_commands
+            .get(id)
+            .map(|entry| entry.command.clone());
+        assert!(execution_lookup.is_some());
+        assert!(matches!(
+            execution_lookup
+                .expect("command should still be pending")
+                .approval_status,
+            ApprovalStatus::Approved
+        ));
     }
 }

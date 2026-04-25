@@ -83,6 +83,11 @@ pub fn key_status(provider: &str) -> ProviderKeyStatus {
     }
 }
 
+/// True when a usable key is already linked for the provider.
+pub fn is_provider_configured(provider: &str) -> bool {
+    matches!(key_status(provider).status, KeyStatus::Set)
+}
+
 /// Retrieve a provider key for internal Rust use only.
 ///
 /// This function must **never** be called from a Tauri command handler.
@@ -202,9 +207,7 @@ fn retrieve_key_macos(provider: &str) -> Result<String, AppError> {
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else if output.status.code() == Some(44) {
-        Err(AppError::NotFound(format!(
-            "No key stored for provider '{provider}'"
-        )))
+        Err(AppError::ProviderNotConfigured(provider.to_string()))
     } else {
         Err(AppError::ExecutionError(
             "Keychain read denied — check system keychain access".to_string(),
