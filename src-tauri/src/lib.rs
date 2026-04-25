@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use chrono::{DateTime, Utc};
 use models::{HistoryEntry, MachineInfo, ParsedCommand};
 
 pub mod applescript;
@@ -36,9 +37,14 @@ pub struct AppState {
     pub inner: Mutex<AppStateInner>,
 }
 
+pub struct PendingCommandEntry {
+    pub command: ParsedCommand,
+    pub created_at: DateTime<Utc>,
+}
+
 pub struct AppStateInner {
     pub machine_info: Option<MachineInfo>,
-    pub pending_commands: HashMap<String, ParsedCommand>,
+    pub pending_commands: HashMap<String, PendingCommandEntry>,
     pub history: Vec<HistoryEntry>,
 }
 
