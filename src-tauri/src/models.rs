@@ -170,16 +170,6 @@ pub struct ParsedCommand {
     pub choices: Vec<String>,
 }
 
-// ── Suggestion projection ────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandSuggestion {
-    pub id: String,
-    pub family: String,
-    pub canonical: String,
-    pub detail: String,
-}
-
 // ── Execution event ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

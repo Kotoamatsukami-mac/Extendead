@@ -14,7 +14,6 @@ pub mod executor;
 pub mod history;
 pub mod intent_language;
 pub mod intent_ontology;
-pub mod interpret_commands;
 pub mod interpret_local;
 pub mod machine;
 pub mod models;
@@ -52,7 +51,6 @@ pub struct AppStateInner {
 fn invoke_command_names() -> &'static [&'static str] {
     &[
         "parse_command",
-        "suggest_commands",
         "execute_command",
         "approve_command",
         "deny_command",
@@ -68,7 +66,6 @@ fn invoke_command_names() -> &'static [&'static str] {
         "get_provider_key_status",
         "set_provider_key",
         "delete_provider_key",
-        "debug_interpret_local",
     ]
 }
 
@@ -76,7 +73,6 @@ fn invoke_command_names() -> &'static [&'static str] {
 fn invoke_command_names() -> &'static [&'static str] {
     &[
         "parse_command",
-        "suggest_commands",
         "execute_command",
         "approve_command",
         "deny_command",
@@ -165,7 +161,6 @@ pub fn run() {
     #[cfg(debug_assertions)]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::parse_command,
-        commands::suggest_commands,
         commands::execute_command,
         commands::approve_command,
         commands::deny_command,
@@ -181,13 +176,11 @@ pub fn run() {
         commands::get_provider_key_status,
         commands::set_provider_key,
         commands::delete_provider_key,
-        interpret_commands::debug_interpret_local,
     ]);
 
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::parse_command,
-        commands::suggest_commands,
         commands::execute_command,
         commands::approve_command,
         commands::deny_command,
@@ -215,8 +208,11 @@ mod tests {
     use super::invoke_command_names;
 
     #[test]
-    fn debug_interpret_exposure_matches_build_mode() {
-        let has_debug_interpret = invoke_command_names().contains(&"debug_interpret_local");
-        assert_eq!(has_debug_interpret, cfg!(debug_assertions));
+    fn invoke_surface_has_core_commands() {
+        let commands = invoke_command_names();
+        assert!(commands.contains(&"parse_command"));
+        assert!(commands.contains(&"execute_command"));
+        assert!(commands.contains(&"approve_command"));
+        assert!(commands.contains(&"deny_command"));
     }
 }
