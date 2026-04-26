@@ -174,6 +174,12 @@ pub fn interpret(input: &str) -> Vec<CandidateIntent> {
 }
 
 fn extract_service_open(normalized: &str) -> Option<(String, Option<String>)> {
+    // PRIORITY: Check for local apps first. If a local app matches the query,
+    // prefer it over any web service with the same name.
+    // This ensures local apps always shadow web services (local-first design).
+    // Currently, the service catalog is empty by design (see service_catalog.rs),
+    // making this app purely local-first for macOS system control.
+
     if let Some(service) = service_catalog::find_service_by_query(normalized) {
         return Some((service.id.to_string(), None));
     }
