@@ -41,6 +41,22 @@
   border-color: rgba(96, 165, 250, 0.26);
 }
 
+.lounge-strip--preview-valid {
+  border-color: rgba(52, 211, 153, 0.24);
+}
+
+.lounge-strip--preview-needs_more,
+.lounge-strip--preview-permission_needed,
+.lounge-strip--preview-approval_needed {
+  border-color: rgba(255, 159, 10, 0.24);
+}
+
+.lounge-strip--preview-unsupported_yet,
+.lounge-strip--preview-blocked,
+.lounge-strip--attention {
+  border-color: rgba(255, 90, 120, 0.24);
+}
+
 .lounge-strip__body {
   display: flex;
   align-items: center;
@@ -79,22 +95,29 @@
   animation: marker-pulse 1.35s ease-in-out infinite;
 }
 
-.lounge-strip--done .lounge-strip__marker {
+.lounge-strip--done .lounge-strip__marker,
+.lounge-strip--preview-valid .lounge-strip__marker {
   background: var(--accent-r0);
   box-shadow: 0 0 0 4px rgba(4, 120, 87, 0.10);
 }
 
-.lounge-strip--error .lounge-strip__marker {
+.lounge-strip--attention .lounge-strip__marker,
+.lounge-strip--preview-blocked .lounge-strip__marker,
+.lounge-strip--preview-unsupported_yet .lounge-strip__marker {
   background: var(--accent-r3);
   box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.10);
 }
 
-.lounge-strip--clarify .lounge-strip__marker {
+.lounge-strip--clarify .lounge-strip__marker,
+.lounge-strip--preview-needs_more .lounge-strip__marker,
+.lounge-strip--preview-permission_needed .lounge-strip__marker,
+.lounge-strip--preview-approval_needed .lounge-strip__marker {
   background: var(--accent-r1);
   box-shadow: 0 0 0 4px rgba(183, 121, 31, 0.10);
 }
 
-.lounge-strip--choice .lounge-strip__marker {
+.lounge-strip--choice .lounge-strip__marker,
+.lounge-strip--preview-choose_one .lounge-strip__marker {
   background: var(--accent-blue);
   box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.12);
 }
@@ -154,9 +177,8 @@
 
 .lounge-strip__input::placeholder {
   color: var(--text-muted);
-  font-weight: 500;
-  letter-spacing: 0;
-  transition: color 0.18s ease;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .lounge-strip__input:focus::placeholder {
@@ -166,6 +188,91 @@
 .lounge-strip__input:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.lounge-strip__preview {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.90), rgba(6, 8, 14, 0.86));
+  backdrop-filter: blur(18px) saturate(1.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.36);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  -webkit-app-region: no-drag;
+}
+
+.lounge-strip__preview-tokens {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lounge-strip__token {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 999px;
+  color: rgba(226, 232, 240, 0.78);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+}
+
+.lounge-strip__token--verb { color: rgba(191, 219, 254, 0.95); border-color: rgba(96, 165, 250, 0.18); }
+.lounge-strip__token--target,
+.lounge-strip__token--service,
+.lounge-strip__token--browser { color: rgba(167, 243, 208, 0.95); border-color: rgba(52, 211, 153, 0.16); }
+.lounge-strip__token--path { color: rgba(216, 180, 254, 0.94); border-color: rgba(168, 85, 247, 0.16); }
+.lounge-strip__token--mode { color: rgba(253, 224, 71, 0.92); border-color: rgba(250, 204, 21, 0.16); }
+.lounge-strip__token--connector { color: rgba(148, 163, 184, 0.80); }
+.lounge-strip__token--risk { color: rgba(253, 186, 116, 0.96); border-color: rgba(249, 115, 22, 0.18); }
+.lounge-strip__token--unknown { color: rgba(248, 113, 113, 0.88); border-color: rgba(248, 113, 113, 0.14); }
+
+.lounge-strip__preview-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.lounge-strip__preview-badge {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lounge-strip__preview-canonical,
+.lounge-strip__preview-suggestion {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+
+.lounge-strip__preview-suggestion {
+  color: rgba(203, 213, 225, 0.66);
 }
 
 .lounge-strip__panel {
