@@ -7,6 +7,9 @@ pub enum AppleScriptTemplate {
     UnmuteVolume,
     SetOutputVolume(u8),
     GetOutputVolume,
+    DndEnable,
+    DndDisable,
+    SetDisplayBrightness(u8),
 }
 
 impl AppleScriptTemplate {
@@ -19,6 +22,23 @@ impl AppleScriptTemplate {
             }
             AppleScriptTemplate::GetOutputVolume => {
                 "output volume of (get volume settings)".to_string()
+            }
+            AppleScriptTemplate::DndEnable => {
+                // Enable first Focus mode (requires macOS Monterey+)
+                // Activates the most recent or default focus mode
+                "tell application \"System Events\" to key code 20 using {shift down, option down, command down}".to_string()
+            }
+            AppleScriptTemplate::DndDisable => {
+                // Disable Focus mode by pressing the same shortcut again
+                "tell application \"System Events\" to key code 20 using {shift down, option down, command down}".to_string()
+            }
+            AppleScriptTemplate::SetDisplayBrightness(level) => {
+                // Set display brightness 0-100 via AppleScript (requires permissions)
+                let brightness = (*level as f32 / 100.0).min(1.0).max(0.0);
+                format!(
+                    "tell application \"System Events\" to tell display preferences to set brightness to {:.2}",
+                    brightness
+                )
             }
         }
     }
@@ -54,6 +74,24 @@ pub fn get_volume() -> Option<u8> {
     {
         None
     }
+}
+
+/// Enable Do Not Disturb / first Focus mode.
+/// Requires macOS Monterey+ and Focus mode to be configured.
+pub fn enable_dnd() -> Result<String, AppError> {
+    run_template(AppleScriptTemplate::DndEnable)
+}
+
+/// Disable Do Not Disturb / active Focus mode.
+/// Requires macOS Monterey+ and Focus mode to be configured.
+pub fn disable_dnd() -> Result<String, AppError> {
+    run_template(AppleScriptTemplate::DndDisable)
+}
+
+/// Set display brightness as a 0–100 percentage.
+/// Requires macOS and Accessibility permissions.
+pub fn set_brightness(level: u8) -> Result<String, AppError> {
+    run_template(AppleScriptTemplate::SetDisplayBrightness(level))
 }
 
 /// Return true when the osascript stderr indicates a permission denial.
@@ -115,5 +153,39 @@ mod tests {
         assert!(is_permission_denied("-1743"));
         assert!(!is_permission_denied("syntax error near line 1"));
         assert!(!is_permission_denied(""));
+    }
+
+    #[test]
+    fn test_dnd_enable_script() {
+        let script = AppleScriptTemplate::DndEnable.script();
+        assert!(script.contains("key code 20"));
+        assert!(script.contains("shift down"));
+        assert!(script.contains("option down"));
+        assert!(script.contains("command down"));
+    }
+
+    #[test]
+    fn test_dnd_disable_script() {
+        let script = AppleScriptTemplate::DndDisable.script();
+        assert!(script.contains("key code 20"));
+    }
+
+    #[test]
+    fn test_brightness_script_generation() {
+        let script_50 = AppleScriptTemplate::SetDisplayBrightness(50).script();
+        assert!(script_50.contains("0.50")); // 50/100 = 0.5
+
+        let script_100 = AppleScriptTemplate::SetDisplayBrightness(100).script();
+        assert!(script_100.contains("1.00")); // 100/100 = 1.0
+
+        let script_0 = AppleScriptTemplate::SetDisplayBrightness(0).script();
+        assert!(script_0.contains("0.00")); // 0/100 = 0.0
+    }
+
+    #[test]
+    fn test_brightness_clamping() {
+        // Over 100 should clamp to 1.0
+        let script = AppleScriptTemplate::SetDisplayBrightness(255).script();
+        assert!(script.contains("1.00"));
     }
 }

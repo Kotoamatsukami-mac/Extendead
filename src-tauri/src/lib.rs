@@ -26,6 +26,7 @@ pub mod provider_interpreter;
 pub mod provider_keys;
 pub mod resolver;
 pub mod risk;
+pub mod semantic;
 pub mod service_catalog;
 // Future-facing stub. Keep isolated from active execution paths.
 pub mod ui_automation;
