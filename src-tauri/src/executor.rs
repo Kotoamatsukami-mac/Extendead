@@ -9,6 +9,7 @@ use crate::models::{
     ExecutionEvent, ExecutionEventKind, ExecutionOutcome, ExecutionResult, ParsedCommand,
     PermState, PermissionStatus, ResolvedAction,
 };
+use crate::modes;
 use crate::path_policy;
 use crate::permissions;
 use crate::risk;
@@ -390,6 +391,18 @@ fn dispatch_action<R: Runtime>(
             );
             dispatch_plan(command_id, mode_name, steps, app, timeline)
         }
+        ResolvedAction::ActivateMode { mode_id, mode_name } => {
+            emit(
+                app,
+                timeline,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Activating {mode_name} mode"),
+                ),
+            );
+            activate_mode(command_id, mode_id, mode_name, app, timeline)
+        }
     }
 }
 
@@ -493,7 +506,8 @@ fn dispatch_action_without_events(action: &ResolvedAction) -> Result<String, App
         ResolvedAction::QuitApp { .. }
         | ResolvedAction::HideApp { .. }
         | ResolvedAction::ForceQuitApp { .. }
-        | ResolvedAction::RunPlan { .. } => Err(AppError::ValidationError(
+        | ResolvedAction::RunPlan { .. }
+        | ResolvedAction::ActivateMode { .. } => Err(AppError::ValidationError(
             "Nested or destructive plan step is not allowed".to_string(),
         )),
     }
@@ -693,6 +707,48 @@ fn move_path(source_path: &str, destination_path: &str) -> Result<String, AppErr
     std::fs::rename(source_path, destination_path)
         .map_err(|e| AppError::ExecutionError(format!("move failed: {e}")))?;
     Ok(format!("Moved {source_path} to {destination_path}"))
+}
+
+fn activate_mode<R: tauri::Runtime>(
+    command_id: &str,
+    mode_id: &str,
+    mode_name: &str,
+    app: &tauri::AppHandle<R>,
+    timeline: &mut Vec<ExecutionEvent>,
+) -> Result<String, AppError> {
+    if let Some(mode) = modes::get_mode(mode_id) {
+        emit(
+            app,
+            timeline,
+            new_event(
+                command_id,
+                ExecutionEventKind::Progress,
+                format!(
+                    "Executing {} groups in {} mode",
+                    mode.groups.len(),
+                    mode_name
+                ),
+            ),
+        );
+
+        for group in &mode.groups {
+            emit(
+                app,
+                timeline,
+                new_event(
+                    command_id,
+                    ExecutionEventKind::Progress,
+                    format!("Running group: {}", group.label),
+                ),
+            );
+        }
+
+        Ok(format!("{mode_name} mode activated"))
+    } else {
+        Err(AppError::ExecutionError(format!(
+            "Mode {mode_id} not found"
+        )))
+    }
 }
 
 #[cfg(test)]

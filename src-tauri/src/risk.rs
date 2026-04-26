@@ -30,6 +30,16 @@ fn action_risk(action: &ResolvedAction, kind: &CommandKind) -> RiskLevel {
             .map(|step| action_risk(&step.action, kind))
             .max()
             .unwrap_or(RiskLevel::R0),
+        ResolvedAction::ActivateMode { mode_id, .. } => mode_risk(mode_id),
+    }
+}
+
+fn mode_risk(mode_id: &str) -> RiskLevel {
+    match mode_id {
+        "focus" => RiskLevel::R1,
+        "reading" => RiskLevel::R1,
+        "study" => RiskLevel::R2,
+        _ => RiskLevel::R1,
     }
 }
 

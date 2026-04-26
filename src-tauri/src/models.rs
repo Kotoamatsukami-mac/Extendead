@@ -129,6 +129,10 @@ pub enum ResolvedAction {
         mode_name: String,
         steps: Vec<ResolvedPlanStep>,
     },
+    ActivateMode {
+        mode_id: String,
+        mode_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

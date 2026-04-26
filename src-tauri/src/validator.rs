@@ -65,6 +65,14 @@ pub fn validate_action(action: &ResolvedAction) -> Result<(), AppError> {
             }
             Ok(())
         }
+        ResolvedAction::ActivateMode { mode_id, .. } => {
+            if crate::modes::get_mode(mode_id).is_none() {
+                return Err(AppError::ValidationError(format!(
+                    "Mode '{mode_id}' does not exist"
+                )));
+            }
+            Ok(())
+        }
     }
 }
 

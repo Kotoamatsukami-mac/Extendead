@@ -18,6 +18,7 @@ pub mod interpret_commands;
 pub mod interpret_local;
 pub mod machine;
 pub mod models;
+pub mod modes;
 pub mod parser;
 pub mod path_policy;
 pub mod permissions;
