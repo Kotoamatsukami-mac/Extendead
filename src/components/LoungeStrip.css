@@ -72,6 +72,7 @@
 
 .lounge-strip__drag-handle {
   margin-right: 2px;
+  -webkit-app-region: drag;
 }
 
 .lounge-strip__marker {
