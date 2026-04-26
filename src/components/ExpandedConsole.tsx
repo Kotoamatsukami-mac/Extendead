@@ -133,6 +133,27 @@ export function ExpandedConsole({
         />
       )}
 
+      {/* Plan preview — routes are alternatives; steps live inside one selected route. */}
+      {!showHistory && selectedRoute?.action.type === 'run_plan' && (
+        <div className="plan-preview">
+          <div className="plan-preview__header">
+            <span className="plan-preview__eyebrow">Plan preview</span>
+            <span className="plan-preview__title">{selectedRoute.action.mode_name} mode</span>
+          </div>
+          <ol className="plan-preview__steps">
+            {selectedRoute.action.steps.map((step, index) => (
+              <li key={`${step.execution_group}-${index}`} className="plan-preview__step">
+                <span className="plan-preview__group">
+                  {step.execution_group.startsWith('parallel') ? 'Concurrent' : 'Sequential'}
+                </span>
+                <span className="plan-preview__label">{step.label}</span>
+                <span className="plan-preview__risk">{step.risk}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       {/* Confirmation rail */}
       {!showHistory && execState === 'awaiting_confirm' && selectedRoute && parsedCommand && (
         <ConfirmationRail

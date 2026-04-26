@@ -57,6 +57,8 @@ pub enum UnresolvedCode {
     DestinationPathUnresolved,
     DestinationParentMissing,
     PermanentDeleteBlocked,
+    AmbiguousTarget,
+    ProviderConfigurationRequired,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -98,6 +100,14 @@ pub enum ResolvedAction {
         bundle_id: String,
         app_name: String,
     },
+    HideApp {
+        bundle_id: String,
+        app_name: String,
+    },
+    ForceQuitApp {
+        bundle_id: String,
+        app_name: String,
+    },
     AppleScriptTemplate {
         script: String,
         template_id: String,
@@ -115,6 +125,20 @@ pub enum ResolvedAction {
         source_path: String,
         destination_path: String,
     },
+    RunPlan {
+        mode_name: String,
+        steps: Vec<ResolvedPlanStep>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolvedPlanStep {
+    pub label: String,
+    pub description: String,
+    pub action: Box<ResolvedAction>,
+    pub execution_group: String,
+    pub risk: RiskLevel,
+    pub requires_approval: bool,
 }
 
 // ── Resolved route ───────────────────────────────────────────────────────────
