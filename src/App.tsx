@@ -1,20 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DeveloperPanel } from './components/DeveloperPanel';
-import { ExpandedConsole } from './components/ExpandedConsole';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
-import { usePermissionStatus } from './hooks/usePermissionStatus';
-import type {
-  CommandSuggestion,
-  ExecutionResult,
-  HistoryEntry,
-  ParsedCommand,
-  ProviderKeyStatus,
-  ResultFeedback,
-} from './types/commands';
-import type { ExecutionEvent } from './types/events';
+import type { ExecutionResult, ParsedCommand } from './types/commands';
 
-type AppMode = 'lounge' | 'expanded';
 type ExecState =
   | 'idle'
   | 'parsing'
@@ -22,281 +10,185 @@ type ExecState =
   | 'awaiting_choice'
   | 'awaiting_route'
   | 'awaiting_confirm'
+  | 'awaiting_key'
   | 'executing'
   | 'done'
   | 'error';
 
-const DEV_PANEL_UNLOCK = '//engine';
+type StatusTone = 'neutral' | 'success' | 'error';
 
-const BUILT_IN_PREDICTIONS = [
-  'open youtube',
-  'open safari',
-  'close safari',
-  'open chrome',
-  'open finder',
-  'open slack',
-  'study mode',
-  'focus mode',
-  'break mode',
-  'quieter',
-  'display settings',
-  'downloads',
-  'set volume to 40',
-  DEV_PANEL_UNLOCK,
-] as const;
+type StatusLine = {
+  message: string;
+  tone: StatusTone;
+};
+
+const DEFAULT_PROVIDER = 'perplexity';
+const API_KEY_REQUIRED_MESSAGE = 'API key required for broader interpretation.';
 
 export function App() {
-  const [mode, setMode] = useState<AppMode>('lounge');
   const [inputValue, setInputValue] = useState('');
   const [parsedCommand, setParsedCommand] = useState<ParsedCommand | null>(null);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
   const [execState, setExecState] = useState<ExecState>('idle');
-  const [events, setEvents] = useState<ExecutionEvent[]>([]);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [suggestions, setSuggestions] = useState<CommandSuggestion[]>([]);
-  const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
-  const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
-  const [developerBusy, setDeveloperBusy] = useState(false);
-  const [resultFeedback, setResultFeedback] = useState<ResultFeedback | null>(null);
-  const [windowFeedback, setWindowFeedback] = useState<ResultFeedback | null>(null);
   const [pinBusy, setPinBusy] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(0);
-  const [autoExec, setAutoExec] = useState<{
-    cmd: ParsedCommand;
-    routeIdx: number;
-  } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [pendingProviderInput, setPendingProviderInput] = useState<string | null>(null);
+  const [apiKeyValue, setApiKeyValue] = useState('');
+  const [apiKeyBusy, setApiKeyBusy] = useState(false);
 
-  const oneShotRef = useRef(false);
-  const feedbackTimerRef = useRef<number>(0);
-  const windowFeedbackTimerRef = useRef<number>(0);
-  const suggestionRequestRef = useRef(0);
-
-  const { permissionStatus, refresh: refreshPermissionStatus } = usePermissionStatus();
-
+  const statusTimerRef = useRef<number>(0);
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
   parsedCommandRef.current = parsedCommand;
 
-  function showInlineFeedback(message: string, type: 'success' | 'error', duration: number) {
-    window.clearTimeout(feedbackTimerRef.current);
-    setResultFeedback({ message, type });
-    feedbackTimerRef.current = window.setTimeout(() => {
-      setResultFeedback(null);
-      setExecState('idle');
-      setParsedCommand(null);
-      setResult(null);
-      setFocusTrigger((n) => n + 1);
-    }, duration);
+  function clearStatusTimer() {
+    window.clearTimeout(statusTimerRef.current);
   }
 
-  function showWindowFeedback(message: string, type: 'success' | 'error', duration: number) {
-    window.clearTimeout(windowFeedbackTimerRef.current);
-    setWindowFeedback({ message, type });
-    windowFeedbackTimerRef.current = window.setTimeout(() => {
-      setWindowFeedback(null);
+  function resetToIdle(clearInput = true) {
+    clearStatusTimer();
+    if (clearInput) {
+      setInputValue('');
+    }
+    setParsedCommand(null);
+    setSelectedRouteIndex(null);
+    setExecState('idle');
+    setResult(null);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setPendingProviderInput(null);
+    setApiKeyValue('');
+    setFocusTrigger((n) => n + 1);
+  }
+
+  function settleWithMessage(message: string, tone: StatusTone, duration: number) {
+    clearStatusTimer();
+    if (tone === 'success') {
+      setSuccessMessage(message);
+      setErrorMessage(null);
+      setExecState('done');
+    } else if (tone === 'error') {
+      setErrorMessage(message);
+      setSuccessMessage(null);
+      setExecState('error');
+    } else {
+      setSuccessMessage(null);
+      setErrorMessage(null);
+    }
+    statusTimerRef.current = window.setTimeout(() => {
+      resetToIdle(false);
     }, duration);
   }
 
   const bridge = useCommandBridge({
     onParseStart: () => {
-      setShowDeveloperPanel(false);
+      clearStatusTimer();
       setExecState('parsing');
-      setEvents([]);
+      setParsedCommand(null);
+      setSelectedRouteIndex(null);
       setResult(null);
-      setAutoExec(null);
-      setResultFeedback(null);
-      window.clearTimeout(feedbackTimerRef.current);
-      oneShotRef.current = false;
+      setErrorMessage(null);
+      setSuccessMessage(null);
+      setPendingProviderInput(null);
     },
     onParsed: (cmd) => {
       setParsedCommand(cmd);
 
       if (cmd.interpretation_decision === 'clarify') {
-        setMode('lounge');
-        setSelectedRouteIndex(null);
         setExecState('awaiting_clarify');
         return;
       }
 
       if (cmd.interpretation_decision === 'offer_choices' && (cmd.choices?.length ?? 0) > 0) {
-        setMode('lounge');
-        setSelectedRouteIndex(null);
         setExecState('awaiting_choice');
         return;
       }
 
       if (cmd.routes.length === 0) {
-        setExecState('error');
-        showInlineFeedback(getUnresolvedMessage(cmd), 'error', 2600);
+        if (cmd.unresolved_code === 'provider_configuration_required') {
+          setPendingProviderInput(cmd.raw_input);
+          setExecState('awaiting_key');
+          return;
+        }
+        bridge.denyCommand(cmd.id);
+        settleWithMessage(getUnresolvedMessage(cmd), 'error', 3500);
         return;
       }
 
       if (cmd.routes.length === 1) {
         setSelectedRouteIndex(0);
         if (cmd.requires_approval || isPlanRoute(cmd.routes[0])) {
-          setMode('expanded');
           setExecState('awaiting_confirm');
         } else {
-          oneShotRef.current = true;
-          setAutoExec({ cmd, routeIdx: 0 });
+          setExecState('executing');
+          bridge.approveAndExecute(cmd.id, 0);
         }
-      } else {
-        setMode('expanded');
-        setSelectedRouteIndex(null);
-        setExecState('awaiting_route');
+        return;
       }
+
+      setSelectedRouteIndex(null);
+      setExecState('awaiting_route');
     },
     onParseError: (err) => {
-      setExecState('error');
-      showInlineFeedback(err, 'error', 3500);
-    },
-    onExecutionEvent: (event) => {
-      setEvents((prev) => [...prev, event]);
+      settleWithMessage(err, 'error', 3500);
     },
     onExecuted: (res) => {
       setResult(res);
       const isSuccess = res.outcome === 'success';
-      setExecState(isSuccess ? 'done' : 'error');
-
-      if (oneShotRef.current) {
-        oneShotRef.current = false;
-        const msg = isSuccess
-          ? (res.human_message || '✓ Done')
-          : (res.human_message || '✗ Failed');
-        showInlineFeedback(msg, isSuccess ? 'success' : 'error', isSuccess ? 2000 : 3500);
+      if (isSuccess) {
+        settleWithMessage(res.human_message || '✓ Done', 'success', 2000);
+      } else {
+        settleWithMessage(res.human_message || '✗ Failed', 'error', 3500);
       }
-
-      bridge.getHistory().then(setHistory);
     },
     onExecuteError: (err) => {
-      setExecState('error');
-
-      if (oneShotRef.current) {
-        oneShotRef.current = false;
-        showInlineFeedback(err, 'error', 3500);
-      } else {
-        setResult({
-          command_id: parsedCommandRef.current?.id ?? '',
-          outcome: 'recoverable_failure',
-          message: err,
-          human_message: `✗ ${err}`,
-          duration_ms: 0,
-        });
-      }
+      setResult({
+        command_id: parsedCommandRef.current?.id ?? '',
+        outcome: 'recoverable_failure',
+        message: err,
+        human_message: `✗ ${err}`,
+        duration_ms: 0,
+      });
+      settleWithMessage(err, 'error', 3500);
     },
   });
 
   useEffect(() => {
-    bridge.getHistory().then(setHistory);
     bridge.getAppConfig().then((config) => {
       if (config) {
         setAlwaysOnTop(config.always_on_top);
       }
     });
-    void refreshPermissionStatus();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    bridge.setWindowMode(mode);
-  }, [mode, bridge]);
-
-  useEffect(() => {
-    if (!autoExec) return;
-    setAutoExec(null);
-    setExecState('executing');
-    bridge.approveAndExecute(autoExec.cmd.id, autoExec.routeIdx);
-  }, [autoExec, bridge]);
-
-  const prediction = useMemo(
-    () => getPrediction(inputValue, history),
-    [inputValue, history],
-  );
-
-  useEffect(() => {
-    const normalized = inputValue.trim();
-    if (normalized.length < 2 || !!resultFeedback) {
-      setSuggestions([]);
-      return;
-    }
-
-    const requestId = suggestionRequestRef.current + 1;
-    suggestionRequestRef.current = requestId;
-
-    const timer = window.setTimeout(() => {
-      bridge.suggestCommands(normalized).then((nextSuggestions) => {
-        if (suggestionRequestRef.current === requestId) {
-          setSuggestions(rankSuggestions(nextSuggestions, history));
-        }
-      });
-    }, 90);
-
-    return () => window.clearTimeout(timer);
-  }, [bridge, history, inputValue, resultFeedback]);
-
-  const refreshDeveloperStatus = useCallback(async () => {
-    setDeveloperBusy(true);
-    try {
-      const status = await bridge.getProviderKeyStatus('perplexity');
-      setPrimaryProviderStatus(status);
-    } finally {
-      setDeveloperBusy(false);
-    }
+    void bridge.setWindowMode('lounge');
   }, [bridge]);
-
-  const handleOpenEngineLink = useCallback(() => {
-    setShowDeveloperPanel(true);
-    setMode('expanded');
-    setParsedCommand(null);
-    setSelectedRouteIndex(null);
-    setExecState('idle');
-    setEvents([]);
-    setResult(null);
-    setAutoExec(null);
-    setResultFeedback(null);
-    window.clearTimeout(feedbackTimerRef.current);
-    void refreshDeveloperStatus();
-  }, [refreshDeveloperStatus]);
 
   const handleSubmit = useCallback(
     (value: string) => {
       const trimmed = value.trim();
       if (!trimmed) return;
-
-      if (trimmed.toLowerCase() === DEV_PANEL_UNLOCK) {
-        handleOpenEngineLink();
-        setInputValue('');
-        return;
-      }
-
       setInputValue('');
       bridge.parseCommand(trimmed);
     },
-    [bridge, handleOpenEngineLink],
+    [bridge],
   );
 
-  const handleAcceptPrediction = useCallback(() => {
-    if (prediction) {
-      setInputValue(prediction);
-    }
-  }, [prediction]);
-
-  const handleApplySuggestion = useCallback((value: string) => {
-    setInputValue(value);
-  }, []);
-
-  const handleSelectChoice = useCallback((value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    setInputValue('');
-    bridge.parseCommand(trimmed);
-  }, [bridge]);
+  const handleSelectChoice = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      setInputValue('');
+      bridge.parseCommand(trimmed);
+    },
+    [bridge],
+  );
 
   const handleSelectRoute = useCallback(
     (index: number) => {
-      setSelectedRouteIndex(index);
       if (!parsedCommand) return;
+      setSelectedRouteIndex(index);
       const selectedRoute = parsedCommand.routes[index];
       if (parsedCommand.requires_approval || isPlanRoute(selectedRoute)) {
         setExecState('awaiting_confirm');
@@ -318,22 +210,8 @@ export function App() {
     if (parsedCommand) {
       bridge.denyCommand(parsedCommand.id);
     }
-    reset();
+    resetToIdle();
   }, [parsedCommand, bridge]);
-
-  const handleUndo = useCallback(() => {
-    setEvents([]);
-    setResult(null);
-    setExecState('executing');
-    bridge.undoLast();
-  }, [bridge]);
-
-  const handleCollapse = useCallback(() => {
-    if (parsedCommand && execState === 'awaiting_confirm') {
-      bridge.denyCommand(parsedCommand.id);
-    }
-    reset();
-  }, [parsedCommand, execState, bridge]);
 
   const handleToggleAlwaysOnTop = useCallback(() => {
     if (pinBusy) return;
@@ -345,79 +223,55 @@ export function App() {
         setAlwaysOnTop(config.always_on_top);
       })
       .catch((err) => {
-        showWindowFeedback(`Pin toggle failed: ${String(err)}`, 'error', 2600);
+        settleWithMessage(`Pin toggle failed: ${String(err)}`, 'error', 2600);
       })
       .finally(() => {
         setPinBusy(false);
       });
   }, [alwaysOnTop, bridge, pinBusy]);
 
-  const handleLinkPrimaryEngine = useCallback(
-    async (value: string) => {
-      setDeveloperBusy(true);
-      try {
-        await bridge.setProviderKey('perplexity', value);
-        const status = await bridge.getProviderKeyStatus('perplexity');
-        setPrimaryProviderStatus(status);
-      } finally {
-        setDeveloperBusy(false);
-      }
-    },
-    [bridge],
-  );
-
-  const handleClearPrimaryEngine = useCallback(async () => {
-    setDeveloperBusy(true);
-    try {
-      await bridge.deleteProviderKey('perplexity');
-      const status = await bridge.getProviderKeyStatus('perplexity');
-      setPrimaryProviderStatus(status);
-    } finally {
-      setDeveloperBusy(false);
-    }
-  }, [bridge]);
-
-  const handleInspectLocal = useCallback(async (value: string) => {
-    return bridge.debugInterpretLocal(value);
-  }, [bridge]);
-
   const handleInputChange = useCallback((value: string) => {
     setInputValue(value);
-    if (resultFeedback) {
-      window.clearTimeout(feedbackTimerRef.current);
-      setResultFeedback(null);
+    if (execState === 'error' || execState === 'done') {
+      clearStatusTimer();
+      setErrorMessage(null);
+      setSuccessMessage(null);
       setExecState('idle');
       setParsedCommand(null);
+      setSelectedRouteIndex(null);
       setResult(null);
     }
-  }, [resultFeedback]);
+  }, [execState]);
 
-  function reset() {
-    window.clearTimeout(feedbackTimerRef.current);
-    setMode('lounge');
-    setInputValue('');
-    setParsedCommand(null);
-    setSelectedRouteIndex(null);
-    setExecState('idle');
-    setEvents([]);
-    setResult(null);
-    setAutoExec(null);
-    setShowDeveloperPanel(false);
-    setResultFeedback(null);
-    oneShotRef.current = false;
-    setFocusTrigger((n) => n + 1);
-  }
+  const handleApiKeySubmit = useCallback(async () => {
+    if (!pendingProviderInput || !apiKeyValue.trim() || apiKeyBusy) return;
+    setApiKeyBusy(true);
+    try {
+      await bridge.setProviderKey(DEFAULT_PROVIDER, apiKeyValue.trim());
+      setApiKeyValue('');
+      bridge.parseCommand(pendingProviderInput);
+    } catch (err) {
+      settleWithMessage(`API key save failed: ${String(err)}`, 'error', 3500);
+    } finally {
+      setApiKeyBusy(false);
+    }
+  }, [apiKeyBusy, apiKeyValue, bridge, pendingProviderInput]);
+
+  const handleApiKeyCancel = useCallback(() => {
+    if (parsedCommand) {
+      bridge.denyCommand(parsedCommand.id);
+    }
+    setPendingProviderInput(null);
+    settleWithMessage(API_KEY_REQUIRED_MESSAGE, 'error', 3500);
+  }, [parsedCommand, bridge]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && mode === 'expanded') {
-        e.preventDefault();
-        handleCollapse();
-      } else if (execState === 'awaiting_confirm') {
-        if (e.key === 'Enter') {
+      if (execState === 'awaiting_confirm') {
+        if (e.key === 'Enter' || e.key.toLowerCase() === 'y') {
           e.preventDefault();
           handleConfirm();
-        } else if (e.key === 'Escape') {
+        } else if (e.key.toLowerCase() === 'n' || e.key === 'Escape') {
           e.preventDefault();
           handleCancel();
         }
@@ -425,151 +279,112 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mode, execState, handleCollapse, handleConfirm, handleCancel]);
+  }, [execState, handleConfirm, handleCancel]);
 
-  useEffect(() => {
-    const refreshConfig = () => {
-      void bridge.getAppConfig().then((config) => {
-        if (config) {
-          setAlwaysOnTop(config.always_on_top);
-        }
-      });
-    };
-    const refreshFocusedMachineTruth = () => {
-      refreshConfig();
-      void bridge.refreshMachineInfo();
-    };
-
-    refreshConfig();
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        refreshConfig();
-      }
-    }, 15_000);
-
-    window.addEventListener('focus', refreshFocusedMachineTruth);
-    document.addEventListener('visibilitychange', refreshConfig);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener('focus', refreshFocusedMachineTruth);
-      document.removeEventListener('visibilitychange', refreshConfig);
-    };
-  }, [bridge]);
+  const statusLine = buildStatusLine(execState, parsedCommand, result, errorMessage, successMessage);
 
   return (
-    <div className={`app app--${mode}`}>
+    <div className="app">
       <div className="app__surface">
         <LoungeStrip
           inputValue={inputValue}
-          prediction={prediction}
-          suggestions={suggestions}
-          clarificationMessage={
-            execState === 'awaiting_clarify'
-              ? (parsedCommand?.clarification_message ?? parsedCommand?.unresolved_message ?? null)
-              : null
-          }
-          clarificationSlots={execState === 'awaiting_clarify' ? (parsedCommand?.clarification_slots ?? []) : []}
-          choices={execState === 'awaiting_choice' ? (parsedCommand?.choices ?? []) : []}
           execState={execState}
           alwaysOnTop={alwaysOnTop}
           pinBusy={pinBusy}
           focusTrigger={focusTrigger}
-          resultFeedback={resultFeedback}
-          windowFeedback={windowFeedback}
-          embedded={mode === 'expanded'}
+          statusLine={statusLine}
+          clarificationMessage={execState === 'awaiting_clarify' ? parsedCommand?.clarification_message ?? parsedCommand?.unresolved_message ?? null : null}
+          clarificationSlots={execState === 'awaiting_clarify' ? (parsedCommand?.clarification_slots ?? []) : []}
+          choices={execState === 'awaiting_choice' ? (parsedCommand?.choices ?? []) : []}
+          routes={execState === 'awaiting_route' ? (parsedCommand?.routes ?? []) : []}
+          confirmLabel={execState === 'awaiting_confirm' ? buildConfirmLabel(parsedCommand, selectedRouteIndex) : null}
+          confirmDescription={execState === 'awaiting_confirm' ? buildConfirmDescription(parsedCommand, selectedRouteIndex) : null}
+          showApiKeyPrompt={execState === 'awaiting_key'}
+          apiKeyPromptMessage={API_KEY_REQUIRED_MESSAGE}
+          apiKeyValue={apiKeyValue}
+          apiKeyBusy={apiKeyBusy}
           onInput={handleInputChange}
           onSubmit={handleSubmit}
-          onAcceptPrediction={handleAcceptPrediction}
-          onApplySuggestion={handleApplySuggestion}
           onSelectChoice={handleSelectChoice}
-          onEscape={handleCollapse}
+          onSelectRoute={handleSelectRoute}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
           onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-          onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}
+          onApiKeyChange={setApiKeyValue}
+          onApiKeySubmit={handleApiKeySubmit}
+          onApiKeyCancel={handleApiKeyCancel}
+          onEscape={handleCancel}
         />
-        {mode === 'expanded' && (
-          showDeveloperPanel ? (
-            <DeveloperPanel
-              status={primaryProviderStatus}
-              busy={developerBusy}
-              alwaysOnTop={alwaysOnTop}
-              onRefresh={() => void refreshDeveloperStatus()}
-              onLink={handleLinkPrimaryEngine}
-              onClear={handleClearPrimaryEngine}
-              onInspectLocal={handleInspectLocal}
-              onClose={handleCollapse}
-            />
-          ) : (
-            <ExpandedConsole
-              parsedCommand={parsedCommand}
-              selectedRouteIndex={selectedRouteIndex}
-              execState={execState}
-              events={events}
-              result={result}
-              permissionStatus={permissionStatus}
-              history={history}
-              alwaysOnTop={alwaysOnTop}
-              onSelectRoute={handleSelectRoute}
-              onConfirm={handleConfirm}
-              onCancel={handleCancel}
-              onUndo={handleUndo}
-              onCollapse={handleCollapse}
-            />
-          )
-        )}
       </div>
     </div>
   );
 }
 
-function getPrediction(inputValue: string, history: HistoryEntry[]): string {
-  const normalized = inputValue.trim().toLowerCase();
-  if (!normalized) return '';
+function buildStatusLine(
+  execState: ExecState,
+  command: ParsedCommand | null,
+  result: ExecutionResult | null,
+  errorMessage: string | null,
+  successMessage: string | null,
+): StatusLine | null {
+  if (execState === 'idle') return null;
 
-  const candidates = [...history.map((entry) => entry.command.raw_input), ...BUILT_IN_PREDICTIONS];
-  const seen = new Set<string>();
-
-  for (const candidate of candidates) {
-    const lowered = candidate.toLowerCase();
-    if (seen.has(lowered)) continue;
-    seen.add(lowered);
-
-    if (lowered.startsWith(normalized) && lowered !== normalized) {
-      return candidate;
-    }
+  if (execState === 'parsing') {
+    return { message: 'Parsing…', tone: 'neutral' };
   }
 
-  return '';
+  if (execState === 'awaiting_key') {
+    return { message: API_KEY_REQUIRED_MESSAGE, tone: 'neutral' };
+  }
+
+  if (execState === 'awaiting_clarify') {
+    return {
+      message: command?.clarification_message
+        || command?.unresolved_message
+        || 'Need more detail before continuing.',
+      tone: 'neutral',
+    };
+  }
+
+  if (execState === 'awaiting_choice') {
+    return {
+      message: command?.clarification_message || 'Choose an action to continue.',
+      tone: 'neutral',
+    };
+  }
+
+  if (execState === 'awaiting_route') {
+    return { message: 'Choose a route to continue.', tone: 'neutral' };
+  }
+
+  if (execState === 'awaiting_confirm') {
+    const risk = command?.risk ? ` ${command.risk}` : '';
+    return { message: `Approval required${risk}.`, tone: 'neutral' };
+  }
+
+  if (execState === 'executing') {
+    return { message: 'Executing…', tone: 'neutral' };
+  }
+
+  if (execState === 'done') {
+    return { message: successMessage || result?.human_message || '✓ Done', tone: 'success' };
+  }
+
+  if (execState === 'error') {
+    return { message: errorMessage || result?.human_message || '✗ Failed', tone: 'error' };
+  }
+
+  return null;
 }
 
-function rankSuggestions(
-  suggestions: CommandSuggestion[],
-  history: HistoryEntry[],
-): CommandSuggestion[] {
-  if (suggestions.length <= 1 || history.length === 0) return suggestions;
-  const nowHour = new Date().getHours();
-
-  return [...suggestions].sort((a, b) => {
-    return scoreSuggestion(b, history, nowHour) - scoreSuggestion(a, history, nowHour);
-  });
+function buildConfirmLabel(command: ParsedCommand | null, selectedRouteIndex: number | null): string {
+  if (!command || selectedRouteIndex === null) return 'Approve action';
+  return command.routes[selectedRouteIndex]?.label || 'Approve action';
 }
 
-function scoreSuggestion(
-  suggestion: CommandSuggestion,
-  history: HistoryEntry[],
-  nowHour: number,
-): number {
-  const canonical = suggestion.canonical.toLowerCase();
-  return history.reduce((score, entry, index) => {
-    const raw = entry.command.raw_input.toLowerCase();
-    const recency = Math.max(0, history.length - index) / history.length;
-    const hour = new Date(entry.timestamp).getHours();
-    const sameHour = Math.abs(hour - nowHour) <= 1 ? 0.35 : 0;
-    if (raw === canonical) return score + 2 + recency + sameHour;
-    if (raw.startsWith(canonical) || canonical.startsWith(raw)) {
-      return score + 0.8 + recency * 0.5 + sameHour;
-    }
-    return score;
-  }, 0);
+function buildConfirmDescription(command: ParsedCommand | null, selectedRouteIndex: number | null): string | null {
+  if (!command || selectedRouteIndex === null) return null;
+  return command.routes[selectedRouteIndex]?.description || null;
 }
 
 function getUnresolvedMessage(cmd: ParsedCommand): string {
@@ -599,7 +414,7 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
     case 'ambiguous_target':
       return cmd.unresolved_message?.trim() || 'That target is ambiguous. Type a little more of the app name.';
     case 'provider_configuration_required':
-      return cmd.unresolved_message?.trim() || 'Link a provider in the engine panel for broader interpretation.';
+      return cmd.unresolved_message?.trim() || API_KEY_REQUIRED_MESSAGE;
     default:
       break;
   }

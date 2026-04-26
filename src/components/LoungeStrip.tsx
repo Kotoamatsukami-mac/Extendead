@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import type { CommandSuggestion, ResultFeedback } from '../types/commands';
+import type { ResolvedRoute } from '../types/commands';
 import { WindowDragHandle } from './WindowDragHandle';
 import './LoungeStrip.css';
 
+type StatusTone = 'neutral' | 'success' | 'error';
+
+type StatusLine = {
+  message: string;
+  tone: StatusTone;
+};
+
 interface LoungeStripProps {
   inputValue: string;
-  prediction: string;
-  suggestions: CommandSuggestion[];
-  clarificationMessage?: string | null;
-  clarificationSlots?: string[];
-  choices?: string[];
   execState:
     | 'idle'
     | 'parsing'
@@ -18,58 +20,76 @@ interface LoungeStripProps {
     | 'awaiting_choice'
     | 'awaiting_route'
     | 'awaiting_confirm'
+    | 'awaiting_key'
     | 'executing'
     | 'done'
     | 'error';
   alwaysOnTop: boolean;
   pinBusy?: boolean;
   focusTrigger: number;
-  resultFeedback?: ResultFeedback | null;
-  windowFeedback?: ResultFeedback | null;
-  embedded?: boolean;
+  statusLine?: StatusLine | null;
+  clarificationMessage?: string | null;
+  clarificationSlots?: string[];
+  choices?: string[];
+  routes?: ResolvedRoute[];
+  confirmLabel?: string | null;
+  confirmDescription?: string | null;
+  showApiKeyPrompt?: boolean;
+  apiKeyPromptMessage?: string;
+  apiKeyValue?: string;
+  apiKeyBusy?: boolean;
   onInput: (value: string) => void;
   onSubmit: (value: string) => void;
-  onAcceptPrediction: () => void;
-  onApplySuggestion: (value: string) => void;
   onSelectChoice: (value: string) => void;
-  onEscape: () => void;
+  onSelectRoute: (index: number) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
   onToggleAlwaysOnTop: () => void;
-  onOpenEngineLink?: () => void;
+  onApiKeyChange: (value: string) => void;
+  onApiKeySubmit: () => void;
+  onApiKeyCancel: () => void;
+  onEscape: () => void;
 }
 
 export function LoungeStrip({
   inputValue,
-  prediction,
-  suggestions,
-  clarificationMessage,
-  clarificationSlots = [],
-  choices = [],
   execState,
   alwaysOnTop,
   pinBusy,
   focusTrigger,
-  resultFeedback,
-  windowFeedback,
-  embedded,
+  statusLine,
+  clarificationMessage,
+  clarificationSlots = [],
+  choices = [],
+  routes = [],
+  confirmLabel,
+  confirmDescription,
+  showApiKeyPrompt,
+  apiKeyPromptMessage = 'API key required for broader interpretation.',
+  apiKeyValue = '',
+  apiKeyBusy,
   onInput,
   onSubmit,
-  onAcceptPrediction,
-  onApplySuggestion,
   onSelectChoice,
-  onEscape,
+  onSelectRoute,
+  onConfirm,
+  onCancel,
   onToggleAlwaysOnTop,
-  onOpenEngineLink,
+  onApiKeyChange,
+  onApiKeySubmit,
+  onApiKeyCancel,
+  onEscape,
 }: LoungeStripProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const keyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
-  }, [focusTrigger]);
-
-  useEffect(() => {
-    setSelectedSuggestionIndex(0);
-  }, [inputValue, suggestions.length]);
+    if (showApiKeyPrompt) {
+      keyInputRef.current?.focus();
+    } else {
+      inputRef.current?.focus();
+    }
+  }, [focusTrigger, showApiKeyPrompt]);
 
   const isActive = execState !== 'idle';
   const isLoading = execState === 'parsing' || execState === 'executing';
@@ -78,54 +98,15 @@ export function LoungeStrip({
   const isAwaitingClarify = execState === 'awaiting_clarify';
   const isAwaitingChoice = execState === 'awaiting_choice';
 
-  const normalizedInputValue = inputValue.toLowerCase();
-  const normalizedPrediction = prediction.toLowerCase();
-  const hasPredictionPrefix = Boolean(
-    prediction && inputValue && normalizedPrediction.startsWith(normalizedInputValue),
-  );
-  const predictionTail = hasPredictionPrefix ? prediction.slice(inputValue.length) : '';
-  const showPrediction = predictionTail.length > 0 && !resultFeedback;
-  const showSuggestions = suggestions.length > 0 && !resultFeedback && !isLoading && !isAwaitingClarify && !isAwaitingChoice;
-  const showChoices = choices.length > 0 && !resultFeedback && isAwaitingChoice;
-  const showClarify = isAwaitingClarify && !resultFeedback;
-
-  function applySelectedSuggestion() {
-    const suggestion = suggestions[selectedSuggestionIndex];
-    if (suggestion) {
-      onApplySuggestion(suggestion.canonical);
-    }
-  }
+  const showKeyPrompt = Boolean(showApiKeyPrompt);
+  const showConfirm = !showKeyPrompt && Boolean(confirmLabel);
+  const showRoutes = !showKeyPrompt && !showConfirm && routes.length > 0;
+  const showChoices = !showKeyPrompt && !showConfirm && !showRoutes && choices.length > 0 && isAwaitingChoice;
+  const showClarify = !showKeyPrompt && !showConfirm && !showRoutes && !showChoices && isAwaitingClarify;
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (showSuggestions && e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedSuggestionIndex((current) => (current + 1) % suggestions.length);
-      return;
-    }
-
-    if (showSuggestions && e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedSuggestionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
-      return;
-    }
-
-    if ((e.key === 'Tab' && showSuggestions) || (e.key === 'Tab' && showPrediction)) {
-      e.preventDefault();
-      if (showSuggestions) {
-        applySelectedSuggestion();
-      } else {
-        onAcceptPrediction();
-      }
-      return;
-    }
-
     if (e.key === 'Enter' && inputValue.trim()) {
       e.preventDefault();
-      const selectedSuggestion = suggestions[selectedSuggestionIndex];
-      if (showSuggestions && selectedSuggestion && selectedSuggestion.canonical !== inputValue.trim()) {
-        onApplySuggestion(selectedSuggestion.canonical);
-        return;
-      }
       onSubmit(inputValue.trim());
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -137,6 +118,16 @@ export function LoungeStrip({
     onInput(e.target.value);
   }
 
+  function handleKeyInputDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onApiKeySubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onApiKeyCancel();
+    }
+  }
+
   const placeholder =
     execState === 'parsing'
       ? 'reading intent…'
@@ -146,7 +137,13 @@ export function LoungeStrip({
           ? 'add the missing detail…'
           : execState === 'awaiting_choice'
             ? 'choose an action or refine…'
-        : 'tell extendead what to do';
+            : execState === 'awaiting_confirm'
+              ? 'awaiting approval…'
+              : execState === 'awaiting_route'
+                ? 'select a route…'
+                : execState === 'awaiting_key'
+                  ? 'enter API key below…'
+                  : 'tell extendead what to do';
 
   const stateClass = [
     'lounge-strip',
@@ -158,130 +155,166 @@ export function LoungeStrip({
     isAwaitingClarify ? 'lounge-strip--clarify' : '',
     isAwaitingChoice ? 'lounge-strip--choice' : '',
     !alwaysOnTop ? 'lounge-strip--floating' : '',
-    embedded ? 'lounge-strip--embedded' : '',
   ].filter(Boolean).join(' ');
 
   return (
     <div className={stateClass}>
       <div className="lounge-strip__body">
-        {!embedded && (
-          <WindowDragHandle
-            locked={alwaysOnTop}
-            className="lounge-strip__drag-handle"
-          />
-        )}
+        <WindowDragHandle
+          locked={alwaysOnTop}
+          className="lounge-strip__drag-handle"
+        />
         <span className="lounge-strip__marker" aria-hidden="true" />
         <div className="lounge-strip__input-shell">
-          {resultFeedback ? (
-            <span className={`lounge-strip__feedback lounge-strip__feedback--${resultFeedback.type}`}>
-              {resultFeedback.message}
-            </span>
-          ) : (
-            <>
-              {showPrediction && (
-                <div className="lounge-strip__ghost" aria-hidden="true">
-                  <span className="lounge-strip__ghost-typed">{inputValue}</span>
-                  <span className="lounge-strip__ghost-tail">{predictionTail}</span>
-                </div>
-              )}
+          <input
+            ref={inputRef}
+            className="lounge-strip__input"
+            type="text"
+            value={inputValue}
+            placeholder={placeholder}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            disabled={isLoading || showKeyPrompt}
+            autoComplete="off"
+            spellCheck={false}
+          />
 
-              <input
-                ref={inputRef}
-                className="lounge-strip__input"
-                type="text"
-                value={inputValue}
-                placeholder={placeholder}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                disabled={isLoading}
-                autoComplete="off"
-                spellCheck={false}
-              />
+          {showKeyPrompt && (
+            <div className="lounge-strip__panel lounge-strip__panel--key" role="group" aria-label="API key required">
+              <span className="lounge-strip__panel-message">{apiKeyPromptMessage}</span>
+              <div className="lounge-strip__key-row">
+                <input
+                  ref={keyInputRef}
+                  className="lounge-strip__key-input"
+                  type="password"
+                  placeholder="API key"
+                  value={apiKeyValue}
+                  onChange={(e) => onApiKeyChange(e.target.value)}
+                  onKeyDown={handleKeyInputDown}
+                  disabled={apiKeyBusy}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  className="lounge-strip__key-btn lounge-strip__key-btn--primary"
+                  onClick={onApiKeySubmit}
+                  disabled={apiKeyBusy || !apiKeyValue.trim()}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="lounge-strip__key-btn"
+                  onClick={onApiKeyCancel}
+                  disabled={apiKeyBusy}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
-              {showSuggestions && (
-                <div className="lounge-strip__suggestions" role="listbox" aria-label="Command suggestions">
-                  {suggestions.map((suggestion, index) => (
-                    <button
-                      key={suggestion.id}
-                      type="button"
-                      className={[
-                        'lounge-strip__suggestion',
-                        index === selectedSuggestionIndex ? 'lounge-strip__suggestion--active' : '',
-                      ].filter(Boolean).join(' ')}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        onApplySuggestion(suggestion.canonical);
-                      }}
-                    >
-                      <span className="lounge-strip__suggestion-family">{suggestion.family}</span>
-                      <span className="lounge-strip__suggestion-command">{suggestion.canonical}</span>
-                      <span className="lounge-strip__suggestion-detail">{suggestion.detail}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+          {showConfirm && (
+            <div className="lounge-strip__panel lounge-strip__panel--confirm" role="group" aria-label="Approval required">
+              <div className="lounge-strip__panel-message">
+                <span className="lounge-strip__confirm-label">{confirmLabel}</span>
+                {confirmDescription && (
+                  <span className="lounge-strip__confirm-desc">{confirmDescription}</span>
+                )}
+              </div>
+              <div className="lounge-strip__confirm-actions">
+                <button
+                  type="button"
+                  className="lounge-strip__confirm-btn lounge-strip__confirm-btn--yes"
+                  onClick={onConfirm}
+                >
+                  Y
+                </button>
+                <button
+                  type="button"
+                  className="lounge-strip__confirm-btn lounge-strip__confirm-btn--no"
+                  onClick={onCancel}
+                >
+                  N
+                </button>
+              </div>
+            </div>
+          )}
 
-              {showChoices && (
-                <div className="lounge-strip__choices" role="group" aria-label="Choose an action">
-                  {choices.map((choice) => (
-                    <button
-                      key={choice}
-                      type="button"
-                      className="lounge-strip__choice"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        onSelectChoice(choice);
-                      }}
-                    >
-                      {choice}
-                    </button>
-                  ))}
-                </div>
-              )}
+          {showRoutes && (
+            <div className="lounge-strip__panel lounge-strip__panel--routes" role="group" aria-label="Choose a route">
+              <span className="lounge-strip__panel-message">Choose a route to continue.</span>
+              <div className="lounge-strip__route-list">
+                {routes.map((route, index) => (
+                  <button
+                    key={`${route.label}-${index}`}
+                    type="button"
+                    className="lounge-strip__route"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSelectRoute(index);
+                    }}
+                  >
+                    <span className="lounge-strip__route-label">{route.label}</span>
+                    <span className="lounge-strip__route-desc">{route.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-              {showClarify && (
-                <div className="lounge-strip__clarify" role="status" aria-live="polite">
-                  <span className="lounge-strip__clarify-message">
-                    {clarificationMessage || 'Need one more detail before I can run this.'}
-                  </span>
-                  {clarificationSlots.length > 0 && (
-                    <span className="lounge-strip__clarify-slots">
-                      Needed: {clarificationSlots.map((slot) => slot.replace(/_/g, ' ')).join(', ')}
-                    </span>
-                  )}
-                </div>
+          {showChoices && (
+            <div className="lounge-strip__panel lounge-strip__panel--choices" role="group" aria-label="Choose an action">
+              <span className="lounge-strip__panel-message">Choose an action to continue.</span>
+              <div className="lounge-strip__choices">
+                {choices.map((choice) => (
+                  <button
+                    key={choice}
+                    type="button"
+                    className="lounge-strip__choice"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onSelectChoice(choice);
+                    }}
+                  >
+                    {choice}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {showClarify && (
+            <div className="lounge-strip__panel lounge-strip__panel--clarify" role="status" aria-live="polite">
+              <span className="lounge-strip__clarify-message">
+                {clarificationMessage || 'Need one more detail before I can run this.'}
+              </span>
+              {clarificationSlots.length > 0 && (
+                <span className="lounge-strip__clarify-slots">
+                  Needed: {clarificationSlots.map((slot) => slot.replace(/_/g, ' ')).join(', ')}
+                </span>
               )}
-            </>
+            </div>
           )}
         </div>
+
+        {statusLine && (
+          <span
+            className={
+              statusLine.tone === 'neutral'
+                ? 'lounge-strip__status'
+                : `lounge-strip__status lounge-strip__status--${statusLine.tone}`
+            }
+          >
+            {statusLine.message}
+          </span>
+        )}
 
         <div className="lounge-strip__meta">
           <span className={`lounge-strip__pin-state ${alwaysOnTop ? 'lounge-strip__pin-state--active' : ''}`}>
             {alwaysOnTop ? 'Pinned' : 'Floating'}
           </span>
-          {windowFeedback && (
-            <span className={`lounge-strip__window-feedback lounge-strip__window-feedback--${windowFeedback.type}`}>
-              {windowFeedback.message}
-            </span>
-          )}
-          {(showPrediction || showSuggestions) && <span className="lounge-strip__hint">tab</span>}
-          {showChoices && <span className="lounge-strip__hint">pick</span>}
-          {showClarify && <span className="lounge-strip__hint">clarify</span>}
-
-          {onOpenEngineLink && (
-            <button
-              className="lounge-strip__action-btn"
-              onClick={onOpenEngineLink}
-              title="Engine link"
-              aria-label="Open engine link panel"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M13.5 8a5.5 5.5 0 0 1-.08.87l1.52 1.19a.36.36 0 0 1 .09.46l-1.44 2.49a.36.36 0 0 1-.44.16l-1.79-.72a5.4 5.4 0 0 1-1.51.87l-.27 1.9a.36.36 0 0 1-.36.3H6.38a.36.36 0 0 1-.36-.3l-.27-1.9a5.7 5.7 0 0 1-1.5-.87l-1.8.72a.36.36 0 0 1-.44-.16L.57 10.52a.36.36 0 0 1 .09-.46l1.52-1.19A5.6 5.6 0 0 1 2.1 8c0-.3.03-.59.08-.87L.66 5.94a.36.36 0 0 1-.09-.46l1.44-2.49a.36.36 0 0 1 .44-.16l1.79.72a5.4 5.4 0 0 1 1.51-.87l.27-1.9A.36.36 0 0 1 6.38.48h2.88c.18 0 .33.13.36.3l.27 1.9a5.7 5.7 0 0 1 1.5.87l1.8-.72a.36.36 0 0 1 .44.16l1.44 2.49a.36.36 0 0 1-.09.46l-1.52 1.19c.05.28.08.57.08.87Z" stroke="currentColor" strokeWidth="1.3" />
-              </svg>
-            </button>
-          )}
-
           <button
             className={`lounge-strip__pin ${alwaysOnTop ? 'lounge-strip__pin--active' : ''}`}
             onClick={onToggleAlwaysOnTop}

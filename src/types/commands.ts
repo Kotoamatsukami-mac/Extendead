@@ -1,5 +1,3 @@
-import type { ExecutionEvent } from './events';
-
 // Mirror of Rust models.rs — snake_case matches Tauri's default serde output.
 
 export type CommandKind =
@@ -159,15 +157,6 @@ export interface ExecutionResult {
   inverse_action?: ResolvedAction;
 }
 
-export interface HistoryEntry {
-  command: ParsedCommand;
-  outcome: ExecutionOutcome;
-  execution_events?: ExecutionEvent[];
-  duration_ms: number;
-  inverse_action?: ResolvedAction;
-  timestamp: string;
-}
-
 export interface BrowserInfo {
   name: string;
   bundle_id: string;
@@ -200,31 +189,4 @@ export interface PermissionStatus {
 export interface AppConfig {
   always_on_top: boolean;
   max_history: number;
-}
-
-export type KeyStatus = 'set' | 'not_set' | 'access_denied';
-
-export interface ProviderKeyStatus {
-  provider: string;
-  status: KeyStatus;
-}
-
-export interface ResultFeedback {
-  message: string;
-  type: 'success' | 'error';
-}
-
-export interface CommandSuggestion {
-  id: string;
-  family: string;
-  canonical: string;
-  detail: string;
-}
-
-export interface ServiceDefinition {
-  id: string;
-  display_name: string;
-  aliases: string[];
-  url: string;
-  category: string;
 }

@@ -6,7 +6,7 @@ use tauri::Emitter;
 use crate::errors::AppError;
 use crate::intent_language::{CandidateIntent, CanonicalAction};
 use crate::models::{
-    ApprovalStatus, CommandSuggestion, ExecutionOutcome, ExecutionResult, HistoryEntry,
+    ApprovalStatus, ExecutionOutcome, ExecutionResult, HistoryEntry,
     InterpretationDecision, MachineInfo, ParsedCommand, PermissionStatus,
 };
 #[cfg(debug_assertions)]
@@ -183,7 +183,7 @@ fn apply_surface_fields(command: &mut ParsedCommand, surface: &InterpretationSur
 }
 
 fn append_provider_hint(command: &mut ParsedCommand) {
-    let hint = "Link a provider in the engine panel for broader interpretation.";
+    let hint = "API key required for broader interpretation.";
     match command.unresolved_message.as_deref() {
         Some(existing) if existing.contains(hint) => {}
         Some(existing) if !existing.trim().is_empty() => {
@@ -389,33 +389,6 @@ fn intent_key(intent: &parser::Intent) -> String {
     }
 }
 
-fn intent_family_label(intent: &parser::Intent) -> &'static str {
-    match intent {
-        parser::Intent::OpenService(_) | parser::Intent::OpenServiceInBrowser { .. } => {
-            "open service"
-        }
-        parser::Intent::OpenTarget(_) => "open app",
-        parser::Intent::CloseTarget(_) => "close app",
-        parser::Intent::HideTarget(_) => "hide app",
-        parser::Intent::ForceQuitTarget(_) => "force quit app",
-        parser::Intent::BrowserNewTab { .. }
-        | parser::Intent::BrowserCloseTab { .. }
-        | parser::Intent::BrowserReopenClosedTab { .. } => "browser tab",
-        parser::Intent::OpenPath(_) | parser::Intent::RevealDownloads => "open path",
-        parser::Intent::CreateFolder { .. } => "create folder",
-        parser::Intent::MovePath { .. } => "move path",
-        parser::Intent::TrashPath(_) => "trash path",
-        parser::Intent::DeletePathPermanently(_) => "delete path",
-        parser::Intent::RunMode(_) => "mode",
-        parser::Intent::MuteVolume
-        | parser::Intent::SetVolume(_)
-        | parser::Intent::AdjustVolume { .. } => "sound",
-        parser::Intent::IncreaseBrightness | parser::Intent::DecreaseBrightness => "brightness",
-        parser::Intent::OpenDisplaySettings => "settings",
-        parser::Intent::Unknown(_) => "unknown",
-    }
-}
-
 fn intent_canonical(intent: &parser::Intent) -> String {
     match intent {
         parser::Intent::OpenService(service_id) => service_catalog::service_by_id(service_id)
@@ -485,177 +458,6 @@ fn push_intent_if_new(intents: &mut Vec<parser::Intent>, intent: parser::Intent)
         return;
     }
     intents.push(intent);
-}
-
-fn path_like(value: &str) -> bool {
-    let trimmed = value.trim();
-    trimmed.starts_with("~/")
-        || trimmed.starts_with('/')
-        || trimmed.contains('/')
-        || matches!(
-            trimmed.to_lowercase().as_str(),
-            "desktop" | "downloads" | "documents" | "home"
-        )
-}
-
-fn suggestion_intents(input: &str, machine: &MachineInfo) -> Vec<parser::Intent> {
-    let mut intents = Vec::new();
-    let normalized = parser::normalize(input);
-    if normalized.len() < 2 {
-        return intents;
-    }
-
-    if let Some(intent) = local_interpretation_surface(input).chosen_intent {
-        push_intent_if_new(&mut intents, intent);
-    }
-
-    push_intent_if_new(&mut intents, parser::parse_intent(input));
-
-    for mode in ["study", "focus", "break"] {
-        if mode.starts_with(&normalized) || normalized == format!("{mode} mode") {
-            push_intent_if_new(&mut intents, parser::Intent::RunMode(mode.to_string()));
-        }
-    }
-
-    if let Some(query) = normalized
-        .strip_prefix("open ")
-        .or_else(|| normalized.strip_prefix("launch "))
-        .or_else(|| normalized.strip_prefix("start "))
-        .or_else(|| normalized.strip_prefix("run "))
-    {
-        let query = query.trim();
-        if !query.is_empty() && !path_like(query) {
-            for app in &machine.installed_apps {
-                if parser::normalize(&app.name).contains(query) {
-                    push_intent_if_new(&mut intents, parser::Intent::OpenTarget(app.name.clone()));
-                }
-            }
-            for browser in &machine.installed_browsers {
-                if parser::normalize(&browser.name).contains(query) {
-                    push_intent_if_new(
-                        &mut intents,
-                        parser::Intent::OpenTarget(browser.name.clone()),
-                    );
-                }
-            }
-        }
-    }
-
-    if let Some(query) = normalized
-        .strip_prefix("close ")
-        .or_else(|| normalized.strip_prefix("quit "))
-        .or_else(|| normalized.strip_prefix("exit "))
-    {
-        let query = query.trim();
-        if !query.is_empty() {
-            for app in &machine.installed_apps {
-                if parser::normalize(&app.name).contains(query) {
-                    push_intent_if_new(&mut intents, parser::Intent::CloseTarget(app.name.clone()));
-                }
-            }
-            for browser in &machine.installed_browsers {
-                if parser::normalize(&browser.name).contains(query) {
-                    push_intent_if_new(
-                        &mut intents,
-                        parser::Intent::CloseTarget(browser.name.clone()),
-                    );
-                }
-            }
-        }
-    }
-
-    if let Some(query) = normalized
-        .strip_prefix("open ")
-        .or_else(|| normalized.strip_prefix("watch "))
-        .or_else(|| normalized.strip_prefix("browse "))
-        .or_else(|| normalized.strip_prefix("visit "))
-        .or_else(|| normalized.strip_prefix("go to "))
-    {
-        let query = query.split(" in ").next().unwrap_or("").trim();
-        if !query.is_empty() {
-            for service in service_catalog::search_services(query, 4) {
-                push_intent_if_new(
-                    &mut intents,
-                    parser::Intent::OpenService(service.id.to_string()),
-                );
-            }
-        }
-    }
-
-    intents
-}
-
-// ── suggest_commands ─────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn suggest_commands(
-    input: String,
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<CommandSuggestion>, String> {
-    let machine_info = machine_snapshot(&state)?;
-    let intents = suggestion_intents(&input, &machine_info);
-    let mut suggestions = Vec::new();
-
-    for intent in intents {
-        let (kind, routes, unresolved_code, _unresolved_message) =
-            resolver::resolve(&intent, &machine_info);
-        if unresolved_code.is_some() || routes.is_empty() {
-            continue;
-        }
-
-        let valid_routes: Vec<_> = routes
-            .into_iter()
-            .filter(|route| crate::validator::validate_action(&route.action).is_ok())
-            .collect();
-        if valid_routes.is_empty() {
-            continue;
-        }
-
-        let annotated = risk::annotate(ParsedCommand {
-            id: "suggestion".to_string(),
-            raw_input: intent_canonical(&intent),
-            normalized: parser::normalize(&input),
-            kind,
-            routes: valid_routes.clone(),
-            risk: crate::models::RiskLevel::R0,
-            requires_approval: false,
-            approval_status: ApprovalStatus::NotRequired,
-            unresolved_code: None,
-            unresolved_message: None,
-            interpretation_decision: None,
-            clarification_message: None,
-            clarification_slots: vec![],
-            choices: vec![],
-        });
-
-        let detail = if annotated.requires_approval {
-            format!("{} (requires approval)", valid_routes[0].description)
-        } else {
-            valid_routes[0].description.clone()
-        };
-        let canonical = intent_canonical(&intent);
-        let id = format!(
-            "{}-{}",
-            intent_family_label(&intent).replace(' ', "-"),
-            canonical
-                .chars()
-                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-                .collect::<String>()
-                .to_lowercase()
-        );
-        suggestions.push(CommandSuggestion {
-            id,
-            family: intent_family_label(&intent).to_string(),
-            canonical,
-            detail,
-        });
-
-        if suggestions.len() >= 4 {
-            break;
-        }
-    }
-
-    Ok(suggestions)
 }
 
 // ── parse_command ─────────────────────────────────────────────────────────────
