@@ -308,6 +308,12 @@ export function LoungeStrip({
           >
             {alwaysOnTop ? "Pinned" : "Floating"}
           </span>
+          <span
+            className="lounge-strip__capability-badge"
+            title="Offline-capable: local apps and system commands"
+          >
+            Local
+          </span>
           {windowFeedback && (
             <span
               className={`lounge-strip__window-feedback lounge-strip__window-feedback--${windowFeedback.type}`}

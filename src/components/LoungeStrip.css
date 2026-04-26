@@ -403,6 +403,20 @@
   background: rgba(96, 165, 250, 0.10);
 }
 
+.lounge-strip__capability-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--accent-r0);
+  border: 1px solid rgba(4, 120, 87, 0.24);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(4, 120, 87, 0.10);
+  flex-shrink: 0;
+}
+
 .lounge-strip__window-feedback {
   max-width: 240px;
   font-family: var(--font-mono);
