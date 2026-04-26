@@ -1,25 +1,18 @@
 import "./WindowDragHandle.css";
 
 interface WindowDragHandleProps {
-  locked: boolean;
-  titleWhenLocked?: string;
-  titleWhenUnlocked?: string;
+  pinned: boolean;
   className?: string;
 }
 
-export function WindowDragHandle({
-  locked,
-  titleWhenLocked = "Pinned: unpin to move",
-  titleWhenUnlocked = "Drag shell",
-  className,
-}: WindowDragHandleProps) {
-  const title = locked ? titleWhenLocked : titleWhenUnlocked;
+export function WindowDragHandle({ pinned, className }: WindowDragHandleProps) {
+  const title = pinned ? "Pinned (always visible)" : "Drag to move";
 
   return (
     <div
       className={[
         "window-drag-handle",
-        locked ? "window-drag-handle--locked" : "window-drag-handle--free",
+        pinned ? "window-drag-handle--pinned" : "window-drag-handle--floating",
         className ?? "",
       ]
         .filter(Boolean)
@@ -28,7 +21,7 @@ export function WindowDragHandle({
       tabIndex={-1}
       aria-label={title}
       title={title}
-      {...(locked ? {} : { "data-tauri-drag-region": "" })}
+      data-tauri-drag-region=""
     >
       <span className="window-drag-handle__dot" aria-hidden="true" />
       <span className="window-drag-handle__dot" aria-hidden="true" />

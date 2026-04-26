@@ -1,6 +1,10 @@
 .window-drag-handle {
-  width: 18px;
-  height: 30px;
+  /* Always draggable - pinned state is visual only */
+  cursor: grab;
+  width: 28px;
+  height: 40px;
+  min-width: 28px;
+  min-height: 40px;
   display: grid;
   grid-auto-rows: 4px;
   place-content: center;
@@ -8,11 +12,7 @@
   border-radius: 999px;
   flex-shrink: 0;
   user-select: none;
-}
-
-.window-drag-handle--free {
-  cursor: grab;
-  opacity: 0.78;
+  opacity: 0.72;
   background: linear-gradient(
     90deg,
     rgba(239, 68, 68, 0.12) 0%,
@@ -20,11 +20,11 @@
     rgba(34, 197, 94, 0.12) 66%,
     rgba(34, 197, 94, 0.12) 100%
   );
-  border-radius: 999px;
   transition: all 0.2s ease;
+  /* IMPORTANT: No -webkit-app-region here - let data-tauri-drag-region handle it */
 }
 
-.window-drag-handle--free:hover {
+.window-drag-handle:hover {
   opacity: 1;
   background: linear-gradient(
     90deg,
@@ -35,14 +35,18 @@
   );
 }
 
-.window-drag-handle--free:active {
+.window-drag-handle:active {
   cursor: grabbing;
   opacity: 1;
 }
 
-.window-drag-handle--locked {
-  cursor: default;
-  opacity: 0.34;
+.window-drag-handle--pinned {
+  /* Visual indicator only - still fully draggable */
+  opacity: 0.52;
+}
+
+.window-drag-handle--pinned:hover {
+  opacity: 0.78;
 }
 
 .window-drag-handle__dot {

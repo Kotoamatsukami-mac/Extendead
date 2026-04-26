@@ -1,26 +1,32 @@
-import { useState } from 'react';
-import type { ExecutionResult, HistoryEntry, ParsedCommand, PermissionStatus, ResolvedRoute } from '../types/commands';
-import type { ExecutionEvent } from '../types/events';
+import { useState } from "react";
+import type {
+  ExecutionResult,
+  HistoryEntry,
+  ParsedCommand,
+  PermissionStatus,
+  ResolvedRoute,
+} from "../types/commands";
+import type { ExecutionEvent } from "../types/events";
 
-import { ConfirmationRail } from './ConfirmationRail';
-import { EventTimeline } from './EventTimeline';
-import { HistoryList } from './HistoryList';
-import { PermissionBanner } from './PermissionBanner';
-import { RiskBadge } from './RiskBadge';
-import { RouteSelector } from './RouteSelector';
-import { WindowDragHandle } from './WindowDragHandle';
-import './ExpandedConsole.css';
+import { ConfirmationRail } from "./ConfirmationRail";
+import { EventTimeline } from "./EventTimeline";
+import { HistoryList } from "./HistoryList";
+import { PermissionBanner } from "./PermissionBanner";
+import { RiskBadge } from "./RiskBadge";
+import { RouteSelector } from "./RouteSelector";
+import { WindowDragHandle } from "./WindowDragHandle";
+import "./ExpandedConsole.css";
 
 type ExecState =
-  | 'idle'
-  | 'parsing'
-  | 'awaiting_clarify'
-  | 'awaiting_choice'
-  | 'awaiting_route'
-  | 'awaiting_confirm'
-  | 'executing'
-  | 'done'
-  | 'error';
+  | "idle"
+  | "parsing"
+  | "awaiting_clarify"
+  | "awaiting_choice"
+  | "awaiting_route"
+  | "awaiting_confirm"
+  | "executing"
+  | "done"
+  | "error";
 
 interface ExpandedConsoleProps {
   parsedCommand: ParsedCommand | null;
@@ -63,30 +69,31 @@ export function ExpandedConsole({
   // The undo button in the result card is shown only when the current result has an inverse.
   // The history drawer shows a per-entry undo only for the most recent reversible entry.
   const latestReversibleIndex =
-    history.length > 0 && history[history.length - 1].inverse_action !== undefined ? 0 : null;
+    history.length > 0 &&
+    history[history.length - 1].inverse_action !== undefined
+      ? 0
+      : null;
 
   return (
     <div className="expanded-console">
       {/* Header */}
       <div className="expanded-console__header">
         <WindowDragHandle
-          locked={alwaysOnTop}
+          pinned={alwaysOnTop}
           className="expanded-console__drag-handle"
-          titleWhenUnlocked="Drag shell"
-          titleWhenLocked="Pinned: unpin to move"
         />
         <div className="expanded-console__intent">
           {parsedCommand && (
             <>
               <span className="expanded-console__kind">
-                {parsedCommand.kind.replace(/_/g, ' ')}
+                {parsedCommand.kind.replace(/_/g, " ")}
               </span>
               <span className="expanded-console__input">
                 {parsedCommand.raw_input}
               </span>
             </>
           )}
-          {execState === 'parsing' && (
+          {execState === "parsing" && (
             <span className="expanded-console__spinner">Parsing…</span>
           )}
         </div>
@@ -94,10 +101,12 @@ export function ExpandedConsole({
         <div className="expanded-console__meta">
           {parsedCommand && <RiskBadge risk={parsedCommand.risk} />}
           <button
-            className={`expanded-console__history-btn ${showHistory ? 'expanded-console__history-btn--active' : ''}`}
+            className={`expanded-console__history-btn ${showHistory ? "expanded-console__history-btn--active" : ""}`}
             onClick={() => setShowHistory((v) => !v)}
-            title={showHistory ? 'Hide history' : 'Show history'}
-            aria-label={showHistory ? 'Hide command history' : 'Show command history'}
+            title={showHistory ? "Hide history" : "Show history"}
+            aria-label={
+              showHistory ? "Hide command history" : "Show command history"
+            }
             aria-pressed={showHistory}
           >
             🕒
@@ -134,17 +143,24 @@ export function ExpandedConsole({
       )}
 
       {/* Plan preview — routes are alternatives; steps live inside one selected route. */}
-      {!showHistory && selectedRoute?.action.type === 'run_plan' && (
+      {!showHistory && selectedRoute?.action.type === "run_plan" && (
         <div className="plan-preview">
           <div className="plan-preview__header">
             <span className="plan-preview__eyebrow">Plan preview</span>
-            <span className="plan-preview__title">{selectedRoute.action.mode_name} mode</span>
+            <span className="plan-preview__title">
+              {selectedRoute.action.mode_name} mode
+            </span>
           </div>
           <ol className="plan-preview__steps">
             {selectedRoute.action.steps.map((step, index) => (
-              <li key={`${step.execution_group}-${index}`} className="plan-preview__step">
+              <li
+                key={`${step.execution_group}-${index}`}
+                className="plan-preview__step"
+              >
                 <span className="plan-preview__group">
-                  {step.execution_group.startsWith('parallel') ? 'Concurrent' : 'Sequential'}
+                  {step.execution_group.startsWith("parallel")
+                    ? "Concurrent"
+                    : "Sequential"}
                 </span>
                 <span className="plan-preview__label">{step.label}</span>
                 <span className="plan-preview__risk">{step.risk}</span>
@@ -155,17 +171,20 @@ export function ExpandedConsole({
       )}
 
       {/* Confirmation rail */}
-      {!showHistory && execState === 'awaiting_confirm' && selectedRoute && parsedCommand && (
-        <ConfirmationRail
-          label={selectedRoute.label}
-          description={selectedRoute.description}
-          onConfirm={onConfirm}
-          onCancel={onCancel}
-        />
-      )}
+      {!showHistory &&
+        execState === "awaiting_confirm" &&
+        selectedRoute &&
+        parsedCommand && (
+          <ConfirmationRail
+            label={selectedRoute.label}
+            description={selectedRoute.description}
+            onConfirm={onConfirm}
+            onCancel={onCancel}
+          />
+        )}
 
       {/* Executing state */}
-      {!showHistory && execState === 'executing' && (
+      {!showHistory && execState === "executing" && (
         <div className="expanded-console__executing">
           <span className="expanded-console__spinner">Executing…</span>
         </div>
@@ -175,7 +194,7 @@ export function ExpandedConsole({
       {!showHistory && <EventTimeline events={events} />}
 
       {/* Result card */}
-      {!showHistory && result && execState === 'done' && (
+      {!showHistory && result && execState === "done" && (
         <div
           className={`expanded-console__result expanded-console__result--${result.outcome}`}
         >
@@ -200,7 +219,7 @@ export function ExpandedConsole({
       )}
 
       {/* Error state */}
-      {!showHistory && execState === 'error' && result && (
+      {!showHistory && execState === "error" && result && (
         <div className="expanded-console__result expanded-console__result--recoverable_failure">
           <span className="expanded-console__result-msg">
             {result.human_message}
