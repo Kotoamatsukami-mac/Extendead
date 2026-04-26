@@ -176,7 +176,7 @@ fn unresolved_preview(
         _ => PreviewStatus::UnsupportedYet,
     };
 
-    let headline = match status {
+    let headline = match &status {
         PreviewStatus::ChooseOne => "Choose one",
         PreviewStatus::Blocked => "Blocked",
         PreviewStatus::NeedsMore => "Needs more",
