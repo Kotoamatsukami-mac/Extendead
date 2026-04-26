@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
-import type { ResolvedRoute } from '../types/commands';
+import type { InterpretationPreview, ResolvedRoute } from '../types/commands';
 import { WindowDragHandle } from './WindowDragHandle';
 import './LoungeStrip.css';
 
@@ -13,6 +13,7 @@ type StatusLine = {
 
 interface LoungeStripProps {
   inputValue: string;
+  preview?: InterpretationPreview | null;
   execState:
     | 'idle'
     | 'parsing'
@@ -53,6 +54,7 @@ interface LoungeStripProps {
 
 export function LoungeStrip({
   inputValue,
+  preview,
   execState,
   alwaysOnTop,
   pinBusy,
@@ -97,6 +99,7 @@ export function LoungeStrip({
   const isError = execState === 'error';
   const isAwaitingClarify = execState === 'awaiting_clarify';
   const isAwaitingChoice = execState === 'awaiting_choice';
+  const showPreview = execState === 'idle' && Boolean(inputValue.trim()) && Boolean(preview);
 
   const showKeyPrompt = Boolean(showApiKeyPrompt);
   const showConfirm = !showKeyPrompt && Boolean(confirmLabel);
@@ -130,20 +133,20 @@ export function LoungeStrip({
 
   const placeholder =
     execState === 'parsing'
-      ? 'reading intent…'
+      ? 'reading intent'
       : execState === 'executing'
-        ? 'running sequence…'
+        ? 'running sequence'
         : execState === 'awaiting_clarify'
-          ? 'add the missing detail…'
+          ? 'add the missing detail'
           : execState === 'awaiting_choice'
-            ? 'choose an action or refine…'
+            ? 'choose an action or refine'
             : execState === 'awaiting_confirm'
-              ? 'awaiting approval…'
+              ? 'awaiting approval'
               : execState === 'awaiting_route'
-                ? 'select a route…'
+                ? 'select a route'
                 : execState === 'awaiting_key'
-                  ? 'enter API key below…'
-                  : 'tell extendead what to do';
+                  ? 'enter API key below'
+                  : 'COMMAND YOUR MAC IN ONE SENTENCE';
 
   const stateClass = [
     'lounge-strip',
@@ -151,9 +154,10 @@ export function LoungeStrip({
     isLoading ? 'lounge-strip--loading' : '',
     !isActive ? 'lounge-strip--ready' : '',
     isDone ? 'lounge-strip--done' : '',
-    isError ? 'lounge-strip--error' : '',
+    isError ? 'lounge-strip--attention' : '',
     isAwaitingClarify ? 'lounge-strip--clarify' : '',
     isAwaitingChoice ? 'lounge-strip--choice' : '',
+    preview ? `lounge-strip--preview-${preview.status}` : '',
     !alwaysOnTop ? 'lounge-strip--floating' : '',
   ].filter(Boolean).join(' ');
 
@@ -161,7 +165,7 @@ export function LoungeStrip({
     <div className={stateClass}>
       <div className="lounge-strip__body">
         <WindowDragHandle
-          locked={alwaysOnTop}
+          locked={false}
           className="lounge-strip__drag-handle"
         />
         <span className="lounge-strip__marker" aria-hidden="true" />
@@ -178,6 +182,33 @@ export function LoungeStrip({
             autoComplete="off"
             spellCheck={false}
           />
+
+          {showPreview && preview && (
+            <div className="lounge-strip__preview" role="status" aria-live="polite">
+              <div className="lounge-strip__preview-tokens" aria-label="Command syntax preview">
+                {preview.tokens.map((token, index) => (
+                  <span
+                    key={`${token.text}-${index}`}
+                    className={`lounge-strip__token lounge-strip__token--${token.kind}`}
+                  >
+                    {token.text}
+                  </span>
+                ))}
+              </div>
+              <div className="lounge-strip__preview-line">
+                <span className="lounge-strip__preview-badge">{preview.headline}</span>
+                {preview.canonical && (
+                  <span className="lounge-strip__preview-canonical">{preview.canonical}</span>
+                )}
+                {!preview.canonical && preview.detail && (
+                  <span className="lounge-strip__preview-canonical">{preview.detail}</span>
+                )}
+              </div>
+              {preview.suggestion && (
+                <div className="lounge-strip__preview-suggestion">{preview.suggestion}</div>
+              )}
+            </div>
+          )}
 
           {showKeyPrompt && (
             <div className="lounge-strip__panel lounge-strip__panel--key" role="group" aria-label="API key required">
