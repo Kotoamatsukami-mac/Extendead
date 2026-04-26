@@ -170,6 +170,57 @@ pub struct ParsedCommand {
     pub choices: Vec<String>,
 }
 
+// ── Interpretation preview ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewStatus {
+    Empty,
+    Valid,
+    NeedsMore,
+    ChooseOne,
+    PermissionNeeded,
+    ApprovalNeeded,
+    UnsupportedYet,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewTokenKind {
+    Verb,
+    Target,
+    Service,
+    Browser,
+    Path,
+    Mode,
+    Connector,
+    Risk,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreviewToken {
+    pub text: String,
+    pub kind: PreviewTokenKind,
+    pub resolved: Option<String>,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterpretationPreview {
+    pub status: PreviewStatus,
+    pub normalized: String,
+    pub canonical: Option<String>,
+    pub tokens: Vec<PreviewToken>,
+    pub headline: String,
+    pub detail: Option<String>,
+    pub suggestion: Option<String>,
+    pub choices: Vec<String>,
+    pub risk: Option<RiskLevel>,
+    pub can_submit: bool,
+}
+
 // ── Execution event ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
