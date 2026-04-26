@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent, KeyboardEvent, PointerEvent } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { CommandSuggestion, ResultFeedback } from "../types/commands";
 import "./LoungeStrip.css";
 
@@ -34,6 +35,28 @@ interface LoungeStripProps {
   onEscape: () => void;
   onToggleAlwaysOnTop: () => void;
   onOpenEngineLink?: () => void;
+}
+
+function isInteractiveDragTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      [
+        "input",
+        "button",
+        "textarea",
+        "select",
+        "a",
+        '[role="button"]',
+        '[data-no-window-drag="true"]',
+        ".lounge-strip__input-shell",
+        ".lounge-strip__suggestions",
+        ".lounge-strip__choices",
+        ".lounge-strip__clarify",
+        ".lounge-strip__meta",
+      ].join(", "),
+    ),
+  );
 }
 
 export function LoungeStrip({
@@ -96,6 +119,18 @@ export function LoungeStrip({
     !isAwaitingChoice;
   const showChoices = choices.length > 0 && !resultFeedback && isAwaitingChoice;
   const showClarify = isAwaitingClarify && !resultFeedback;
+
+  const handleShellPointerDown = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      if (embedded) return;
+      if (e.button !== 0) return;
+      if (isInteractiveDragTarget(e.target)) return;
+
+      e.preventDefault();
+      void getCurrentWindow().startDragging();
+    },
+    [embedded],
+  );
 
   function applySelectedSuggestion() {
     const suggestion = suggestions[selectedSuggestionIndex];
@@ -183,10 +218,17 @@ export function LoungeStrip({
     .join(" ");
 
   return (
-    <div className={stateClass}>
-      <div className="lounge-strip__body">
+    <div
+      className={stateClass}
+      data-tauri-drag-region={embedded ? undefined : "true"}
+      onPointerDown={handleShellPointerDown}
+    >
+      <div
+        className="lounge-strip__body"
+        data-tauri-drag-region={embedded ? undefined : "true"}
+      >
         <span className="lounge-strip__marker" aria-hidden="true" />
-        <div className="lounge-strip__input-shell">
+        <div className="lounge-strip__input-shell" data-no-window-drag="true">
           {resultFeedback ? (
             <span
               className={`lounge-strip__feedback lounge-strip__feedback--${resultFeedback.type}`}
@@ -224,6 +266,7 @@ export function LoungeStrip({
                   className="lounge-strip__suggestions"
                   role="listbox"
                   aria-label="Command suggestions"
+                  data-no-window-drag="true"
                 >
                   {suggestions.map((suggestion, index) => (
                     <button
@@ -261,6 +304,7 @@ export function LoungeStrip({
                   className="lounge-strip__choices"
                   role="group"
                   aria-label="Choose an action"
+                  data-no-window-drag="true"
                 >
                   {choices.map((choice) => (
                     <button
@@ -283,6 +327,7 @@ export function LoungeStrip({
                   className="lounge-strip__clarify"
                   role="status"
                   aria-live="polite"
+                  data-no-window-drag="true"
                 >
                   <span className="lounge-strip__clarify-message">
                     {clarificationMessage ||
@@ -302,7 +347,7 @@ export function LoungeStrip({
           )}
         </div>
 
-        <div className="lounge-strip__meta">
+        <div className="lounge-strip__meta" data-no-window-drag="true">
           <span
             className={`lounge-strip__pin-state ${alwaysOnTop ? "lounge-strip__pin-state--active" : ""}`}
           >
