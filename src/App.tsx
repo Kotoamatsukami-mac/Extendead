@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LoungeStrip } from './components/LoungeStrip';
 import { useCommandBridge } from './hooks/useCommandBridge';
-import type { ExecutionResult, ParsedCommand } from './types/commands';
+import type { ExecutionResult, InterpretationPreview, ParsedCommand } from './types/commands';
 
 type ExecState =
   | 'idle'
@@ -27,6 +27,7 @@ const API_KEY_REQUIRED_MESSAGE = 'API key required for broader interpretation.';
 
 export function App() {
   const [inputValue, setInputValue] = useState('');
+  const [preview, setPreview] = useState<InterpretationPreview | null>(null);
   const [parsedCommand, setParsedCommand] = useState<ParsedCommand | null>(null);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
   const [execState, setExecState] = useState<ExecState>('idle');
@@ -41,6 +42,7 @@ export function App() {
   const [apiKeyBusy, setApiKeyBusy] = useState(false);
 
   const statusTimerRef = useRef<number>(0);
+  const previewRequestRef = useRef(0);
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
   parsedCommandRef.current = parsedCommand;
 
@@ -52,6 +54,7 @@ export function App() {
     clearStatusTimer();
     if (clearInput) {
       setInputValue('');
+      setPreview(null);
     }
     setParsedCommand(null);
     setSelectedRouteIndex(null);
@@ -66,6 +69,7 @@ export function App() {
 
   function settleWithMessage(message: string, tone: StatusTone, duration: number) {
     clearStatusTimer();
+    setPreview(null);
     if (tone === 'success') {
       setSuccessMessage(message);
       setErrorMessage(null);
@@ -86,6 +90,7 @@ export function App() {
   const bridge = useCommandBridge({
     onParseStart: () => {
       clearStatusTimer();
+      setPreview(null);
       setExecState('parsing');
       setParsedCommand(null);
       setSelectedRouteIndex(null);
@@ -133,26 +138,27 @@ export function App() {
       setExecState('awaiting_route');
     },
     onParseError: (err) => {
-      settleWithMessage(err, 'error', 3500);
+      settleWithMessage(toGuidanceMessage(err), 'error', 3500);
     },
     onExecuted: (res) => {
       setResult(res);
       const isSuccess = res.outcome === 'success';
       if (isSuccess) {
-        settleWithMessage(res.human_message || '✓ Done', 'success', 2000);
+        settleWithMessage(res.human_message || 'Done', 'success', 2000);
       } else {
-        settleWithMessage(res.human_message || '✗ Failed', 'error', 3500);
+        settleWithMessage(toGuidanceMessage(res.human_message || res.message), 'error', 3500);
       }
     },
     onExecuteError: (err) => {
+      const guidance = toGuidanceMessage(err);
       setResult({
         command_id: parsedCommandRef.current?.id ?? '',
         outcome: 'recoverable_failure',
         message: err,
-        human_message: `✗ ${err}`,
+        human_message: guidance,
         duration_ms: 0,
       });
-      settleWithMessage(err, 'error', 3500);
+      settleWithMessage(guidance, 'error', 3500);
     },
   });
 
@@ -165,11 +171,33 @@ export function App() {
     void bridge.setWindowMode('lounge');
   }, [bridge]);
 
+  useEffect(() => {
+    const value = inputValue.trim();
+    if (!value || execState !== 'idle') {
+      setPreview(null);
+      return;
+    }
+
+    const requestId = previewRequestRef.current + 1;
+    previewRequestRef.current = requestId;
+
+    const timer = window.setTimeout(() => {
+      bridge.interpretPreview(value).then((nextPreview) => {
+        if (previewRequestRef.current === requestId) {
+          setPreview(nextPreview);
+        }
+      });
+    }, 90);
+
+    return () => window.clearTimeout(timer);
+  }, [bridge, execState, inputValue]);
+
   const handleSubmit = useCallback(
     (value: string) => {
       const trimmed = value.trim();
       if (!trimmed) return;
       setInputValue('');
+      setPreview(null);
       bridge.parseCommand(trimmed);
     },
     [bridge],
@@ -180,6 +208,7 @@ export function App() {
       const trimmed = value.trim();
       if (!trimmed) return;
       setInputValue('');
+      setPreview(null);
       bridge.parseCommand(trimmed);
     },
     [bridge],
@@ -223,7 +252,7 @@ export function App() {
         setAlwaysOnTop(config.always_on_top);
       })
       .catch((err) => {
-        settleWithMessage(`Pin toggle failed: ${String(err)}`, 'error', 2600);
+        settleWithMessage(toGuidanceMessage(`Pin toggle failed: ${String(err)}`), 'error', 2600);
       })
       .finally(() => {
         setPinBusy(false);
@@ -251,7 +280,7 @@ export function App() {
       setApiKeyValue('');
       bridge.parseCommand(pendingProviderInput);
     } catch (err) {
-      settleWithMessage(`API key save failed: ${String(err)}`, 'error', 3500);
+      settleWithMessage(toGuidanceMessage(`API key save failed: ${String(err)}`), 'error', 3500);
     } finally {
       setApiKeyBusy(false);
     }
@@ -288,6 +317,7 @@ export function App() {
       <div className="app__surface">
         <LoungeStrip
           inputValue={inputValue}
+          preview={preview}
           execState={execState}
           alwaysOnTop={alwaysOnTop}
           pinBusy={pinBusy}
@@ -330,7 +360,7 @@ function buildStatusLine(
   if (execState === 'idle') return null;
 
   if (execState === 'parsing') {
-    return { message: 'Parsing…', tone: 'neutral' };
+    return { message: 'Parsing', tone: 'neutral' };
   }
 
   if (execState === 'awaiting_key') {
@@ -358,20 +388,20 @@ function buildStatusLine(
   }
 
   if (execState === 'awaiting_confirm') {
-    const risk = command?.risk ? ` ${command.risk}` : '';
-    return { message: `Approval required${risk}.`, tone: 'neutral' };
+    const riskLevel = command?.risk ? ` ${command.risk}` : '';
+    return { message: `Approval needed${riskLevel}.`, tone: 'neutral' };
   }
 
   if (execState === 'executing') {
-    return { message: 'Executing…', tone: 'neutral' };
+    return { message: 'Executing', tone: 'neutral' };
   }
 
   if (execState === 'done') {
-    return { message: successMessage || result?.human_message || '✓ Done', tone: 'success' };
+    return { message: successMessage || result?.human_message || 'Done', tone: 'success' };
   }
 
   if (execState === 'error') {
-    return { message: errorMessage || result?.human_message || '✗ Failed', tone: 'error' };
+    return { message: errorMessage || result?.human_message || 'Needs attention', tone: 'error' };
   }
 
   return null;
@@ -390,9 +420,9 @@ function buildConfirmDescription(command: ParsedCommand | null, selectedRouteInd
 function getUnresolvedMessage(cmd: ParsedCommand): string {
   switch (cmd.unresolved_code) {
     case 'unsupported_command':
-      return 'That command is outside current local coverage.';
+      return 'Unsupported yet. Try open app create folder move file trash file volume or mode.';
     case 'unsupported_service':
-      return 'That service is outside current local coverage.';
+      return 'Unsupported yet. That service is outside current local coverage.';
     case 'browser_not_installed':
       return cmd.unresolved_message?.trim() || 'That browser is not installed on this Mac.';
     case 'app_not_installed':
@@ -402,17 +432,17 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
     case 'source_path_not_found':
       return cmd.unresolved_message?.trim() || 'The source path does not exist.';
     case 'base_path_unresolved':
-      return cmd.unresolved_message?.trim() || 'I could not resolve where to create that folder.';
+      return cmd.unresolved_message?.trim() || 'Need a place to create that folder.';
     case 'target_already_exists':
       return cmd.unresolved_message?.trim() || 'That target already exists.';
     case 'destination_path_unresolved':
-      return cmd.unresolved_message?.trim() || 'I could not resolve the destination path.';
+      return cmd.unresolved_message?.trim() || 'Need a valid destination path.';
     case 'destination_parent_missing':
       return cmd.unresolved_message?.trim() || 'The destination parent folder does not exist.';
     case 'permanent_delete_blocked':
-      return cmd.unresolved_message?.trim() || 'Permanent delete is blocked. Use trash <path> instead.';
+      return cmd.unresolved_message?.trim() || 'Blocked. Permanent delete is disabled. Use trash instead.';
     case 'ambiguous_target':
-      return cmd.unresolved_message?.trim() || 'That target is ambiguous. Type a little more of the app name.';
+      return cmd.unresolved_message?.trim() || 'Choose one. Multiple targets match that name.';
     case 'provider_configuration_required':
       return cmd.unresolved_message?.trim() || API_KEY_REQUIRED_MESSAGE;
     default:
@@ -423,18 +453,22 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
     return cmd.unresolved_message.trim();
   }
 
-  switch (cmd.kind) {
-    case 'unknown':
-      return 'That command is outside current local coverage.';
-    case 'app_control':
-      return 'I could not resolve that app action on this Mac.';
-    case 'settings':
-      return 'That settings route is not available yet.';
-    case 'ui_automation':
-      return 'That UI automation route is not available yet.';
-    default:
-      return 'I could not resolve a safe local route for that command.';
+  return 'Unsupported yet. Try open app create folder move file trash file volume or mode.';
+}
+
+function toGuidanceMessage(value: string): string {
+  const text = value.replace(/^✗\s*/, '').trim();
+  if (!text) return 'Needs attention.';
+  if (/permission|not authorized|accessibility|apple events/i.test(text)) {
+    return text;
   }
+  if (/blocked|denied|permanent delete/i.test(text)) {
+    return text;
+  }
+  if (/not found|does not exist|missing/i.test(text)) {
+    return text;
+  }
+  return text.replace(/\berror\b/gi, 'needs attention');
 }
 
 function isPlanRoute(route: ParsedCommand['routes'][number] | undefined): boolean {
