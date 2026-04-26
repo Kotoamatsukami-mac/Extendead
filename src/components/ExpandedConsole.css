@@ -25,6 +25,7 @@
 
 .expanded-console__drag-handle {
   margin-right: 2px;
+  -webkit-app-region: drag;
 }
 
 .expanded-console__intent {
