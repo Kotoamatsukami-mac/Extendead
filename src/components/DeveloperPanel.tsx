@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { ProviderKeyStatus } from "../types/commands";
-import { WindowDragHandle } from "./WindowDragHandle";
 import "./DeveloperPanel.css";
 
 interface DeveloperPanelProps {
@@ -91,10 +90,6 @@ export function DeveloperPanel({
   return (
     <section className="developer-panel" aria-label="Developer engine panel">
       <div className="developer-panel__header">
-        <WindowDragHandle
-          pinned={alwaysOnTop}
-          className="developer-panel__drag-handle"
-        />
         <div>
           <span className="developer-panel__eyebrow">Developer only</span>
           <h2 className="developer-panel__title">Engine link</h2>

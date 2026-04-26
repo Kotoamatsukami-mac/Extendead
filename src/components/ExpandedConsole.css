@@ -20,10 +20,8 @@
   flex-shrink: 0;
   gap: 12px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
-}
-
-.expanded-console__drag-handle {
-  margin-right: 2px;
+  -webkit-app-region: drag;
+  cursor: grab;
 }
 
 .expanded-console__intent {

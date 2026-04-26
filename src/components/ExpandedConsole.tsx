@@ -14,7 +14,6 @@ import { HistoryList } from "./HistoryList";
 import { PermissionBanner } from "./PermissionBanner";
 import { RiskBadge } from "./RiskBadge";
 import { RouteSelector } from "./RouteSelector";
-import { WindowDragHandle } from "./WindowDragHandle";
 import "./ExpandedConsole.css";
 
 type ExecState =
@@ -78,10 +77,6 @@ export function ExpandedConsole({
     <div className="expanded-console">
       {/* Header */}
       <div className="expanded-console__header">
-        <WindowDragHandle
-          pinned={alwaysOnTop}
-          className="expanded-console__drag-handle"
-        />
         <div className="expanded-console__intent">
           {parsedCommand && (
             <>

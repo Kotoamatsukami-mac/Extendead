@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import type { CommandSuggestion, ResultFeedback } from "../types/commands";
-import { WindowDragHandle } from "./WindowDragHandle";
 import "./LoungeStrip.css";
 
 interface LoungeStripProps {
@@ -186,12 +185,6 @@ export function LoungeStrip({
   return (
     <div className={stateClass}>
       <div className="lounge-strip__body">
-        {!embedded && (
-          <WindowDragHandle
-            pinned={alwaysOnTop}
-            className="lounge-strip__drag-handle"
-          />
-        )}
         <span className="lounge-strip__marker" aria-hidden="true" />
         <div className="lounge-strip__input-shell">
           {resultFeedback ? (
