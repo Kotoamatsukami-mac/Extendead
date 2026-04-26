@@ -220,7 +220,7 @@ fn permission_needed(command: &ParsedCommand) -> Option<String> {
     let status = permissions::get_permission_status();
     let needs_automation = command.routes.iter().any(|route| {
         matches!(
-            route.action,
+            &route.action,
             ResolvedAction::AppleScriptTemplate { .. }
                 | ResolvedAction::QuitApp { .. }
                 | ResolvedAction::HideApp { .. }
