@@ -23,6 +23,7 @@ export function WindowDragHandle({ pinned, className }: WindowDragHandleProps) {
       title={title}
       data-tauri-drag-region=""
     >
+      {/* Visual affordance: three dots = drag handle (universal UI pattern) */}
       <span className="window-drag-handle__dot" aria-hidden="true" />
       <span className="window-drag-handle__dot" aria-hidden="true" />
       <span className="window-drag-handle__dot" aria-hidden="true" />
