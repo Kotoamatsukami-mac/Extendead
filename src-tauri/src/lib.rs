@@ -17,10 +17,12 @@ pub mod intent_ontology;
 pub mod interpret_local;
 pub mod machine;
 pub mod models;
+pub mod native_lexicon;
 pub mod parser;
 pub mod path_policy;
 pub mod permissions;
 pub mod planner;
+pub mod preview;
 pub mod provider_interpreter;
 pub mod provider_keys;
 pub mod resolver;
@@ -50,6 +52,7 @@ pub struct AppStateInner {
 #[cfg(all(test, debug_assertions))]
 fn invoke_command_names() -> &'static [&'static str] {
     &[
+        "interpret_preview",
         "parse_command",
         "execute_command",
         "approve_command",
@@ -72,6 +75,7 @@ fn invoke_command_names() -> &'static [&'static str] {
 #[cfg(all(test, not(debug_assertions)))]
 fn invoke_command_names() -> &'static [&'static str] {
     &[
+        "interpret_preview",
         "parse_command",
         "execute_command",
         "approve_command",
@@ -160,6 +164,7 @@ pub fn run() {
 
     #[cfg(debug_assertions)]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        preview::interpret_preview,
         commands::parse_command,
         commands::execute_command,
         commands::approve_command,
@@ -180,6 +185,7 @@ pub fn run() {
 
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(tauri::generate_handler![
+        preview::interpret_preview,
         commands::parse_command,
         commands::execute_command,
         commands::approve_command,
@@ -210,6 +216,7 @@ mod tests {
     #[test]
     fn test_invoke_handler_includes_core_commands() {
         let commands = invoke_command_names();
+        assert!(commands.contains(&"interpret_preview"));
         assert!(commands.contains(&"parse_command"));
         assert!(commands.contains(&"execute_command"));
         assert!(commands.contains(&"approve_command"));
