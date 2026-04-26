@@ -39,6 +39,47 @@ export type ExecutionOutcome =
 
 export type InterpretationDecision = 'execute' | 'clarify' | 'offer_choices' | 'deny';
 
+export type PreviewStatus =
+  | 'empty'
+  | 'valid'
+  | 'needs_more'
+  | 'choose_one'
+  | 'permission_needed'
+  | 'approval_needed'
+  | 'unsupported_yet'
+  | 'blocked';
+
+export type PreviewTokenKind =
+  | 'verb'
+  | 'target'
+  | 'service'
+  | 'browser'
+  | 'path'
+  | 'mode'
+  | 'connector'
+  | 'risk'
+  | 'unknown';
+
+export interface PreviewToken {
+  text: string;
+  kind: PreviewTokenKind;
+  resolved?: string | null;
+  confidence: number;
+}
+
+export interface InterpretationPreview {
+  status: PreviewStatus;
+  normalized: string;
+  canonical?: string | null;
+  tokens: PreviewToken[];
+  headline: string;
+  detail?: string | null;
+  suggestion?: string | null;
+  choices: string[];
+  risk?: RiskLevel | null;
+  can_submit: boolean;
+}
+
 export interface OpenUrlAction {
   type: 'open_url';
   url: string;
