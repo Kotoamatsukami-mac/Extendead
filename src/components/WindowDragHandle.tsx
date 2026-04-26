@@ -28,7 +28,7 @@ export function WindowDragHandle({
       tabIndex={-1}
       aria-label={title}
       title={title}
-      data-tauri-drag-region={locked ? undefined : "true"}
+      {...(locked ? {} : { "data-tauri-drag-region": "" })}
     >
       <span className="window-drag-handle__dot" aria-hidden="true" />
       <span className="window-drag-handle__dot" aria-hidden="true" />
