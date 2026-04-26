@@ -35,6 +35,7 @@ interface LoungeStripProps {
   confirmLabel?: string | null;
   confirmDescription?: string | null;
   showApiKeyPrompt?: boolean;
+  apiKeyPromptMessage?: string;
   apiKeyValue?: string;
   apiKeyBusy?: boolean;
   onInput: (value: string) => void;
@@ -64,6 +65,7 @@ export function LoungeStrip({
   confirmLabel,
   confirmDescription,
   showApiKeyPrompt,
+  apiKeyPromptMessage = 'API key required for broader interpretation.',
   apiKeyValue = '',
   apiKeyBusy,
   onInput,
@@ -179,7 +181,7 @@ export function LoungeStrip({
 
           {showKeyPrompt && (
             <div className="lounge-strip__panel lounge-strip__panel--key" role="group" aria-label="API key required">
-              <span className="lounge-strip__panel-message">API key required for broader interpretation.</span>
+              <span className="lounge-strip__panel-message">{apiKeyPromptMessage}</span>
               <div className="lounge-strip__key-row">
                 <input
                   ref={keyInputRef}

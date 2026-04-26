@@ -208,7 +208,7 @@ mod tests {
     use super::invoke_command_names;
 
     #[test]
-    fn invoke_surface_has_core_commands() {
+    fn test_invoke_handler_includes_core_commands() {
         let commands = invoke_command_names();
         assert!(commands.contains(&"parse_command"));
         assert!(commands.contains(&"execute_command"));

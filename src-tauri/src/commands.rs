@@ -183,7 +183,7 @@ fn apply_surface_fields(command: &mut ParsedCommand, surface: &InterpretationSur
 }
 
 fn append_provider_hint(command: &mut ParsedCommand) {
-    let hint = "Provide an API key to enable broader interpretation.";
+    let hint = "API key required for broader interpretation.";
     match command.unresolved_message.as_deref() {
         Some(existing) if existing.contains(hint) => {}
         Some(existing) if !existing.trim().is_empty() => {

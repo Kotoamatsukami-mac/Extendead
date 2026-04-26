@@ -22,7 +22,8 @@ type StatusLine = {
   tone: StatusTone;
 };
 
-const PRIMARY_PROVIDER = 'perplexity';
+const DEFAULT_PROVIDER = 'perplexity';
+const API_KEY_REQUIRED_MESSAGE = 'API key required for broader interpretation.';
 
 export function App() {
   const [inputValue, setInputValue] = useState('');
@@ -246,7 +247,7 @@ export function App() {
     if (!pendingProviderInput || !apiKeyValue.trim() || apiKeyBusy) return;
     setApiKeyBusy(true);
     try {
-      await bridge.setProviderKey(PRIMARY_PROVIDER, apiKeyValue.trim());
+      await bridge.setProviderKey(DEFAULT_PROVIDER, apiKeyValue.trim());
       setApiKeyValue('');
       bridge.parseCommand(pendingProviderInput);
     } catch (err) {
@@ -261,7 +262,7 @@ export function App() {
       bridge.denyCommand(parsedCommand.id);
     }
     setPendingProviderInput(null);
-    settleWithMessage('Provider key required to interpret that request.', 'error', 3500);
+    settleWithMessage(API_KEY_REQUIRED_MESSAGE, 'error', 3500);
   }, [parsedCommand, bridge]);
 
   useEffect(() => {
@@ -299,6 +300,7 @@ export function App() {
           confirmLabel={execState === 'awaiting_confirm' ? buildConfirmLabel(parsedCommand, selectedRouteIndex) : null}
           confirmDescription={execState === 'awaiting_confirm' ? buildConfirmDescription(parsedCommand, selectedRouteIndex) : null}
           showApiKeyPrompt={execState === 'awaiting_key'}
+          apiKeyPromptMessage={API_KEY_REQUIRED_MESSAGE}
           apiKeyValue={apiKeyValue}
           apiKeyBusy={apiKeyBusy}
           onInput={handleInputChange}
@@ -332,7 +334,7 @@ function buildStatusLine(
   }
 
   if (execState === 'awaiting_key') {
-    return { message: 'API key required for broader interpretation.', tone: 'neutral' };
+    return { message: API_KEY_REQUIRED_MESSAGE, tone: 'neutral' };
   }
 
   if (execState === 'awaiting_clarify') {
@@ -412,7 +414,7 @@ function getUnresolvedMessage(cmd: ParsedCommand): string {
     case 'ambiguous_target':
       return cmd.unresolved_message?.trim() || 'That target is ambiguous. Type a little more of the app name.';
     case 'provider_configuration_required':
-      return cmd.unresolved_message?.trim() || 'API key required for broader interpretation.';
+      return cmd.unresolved_message?.trim() || API_KEY_REQUIRED_MESSAGE;
     default:
       break;
   }
