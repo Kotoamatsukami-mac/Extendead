@@ -1,6 +1,7 @@
 .window-drag-handle {
   /* Always draggable - pinned state is visual only */
   cursor: grab;
+  pointer-events: auto;
   width: 28px;
   height: 40px;
   min-width: 28px;
