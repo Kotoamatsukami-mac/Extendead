@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DeveloperPanel } from './components/DeveloperPanel';
-import { ExpandedConsole } from './components/ExpandedConsole';
-import { LoungeStrip } from './components/LoungeStrip';
-import { useCommandBridge } from './hooks/useCommandBridge';
-import { usePermissionStatus } from './hooks/usePermissionStatus';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DeveloperPanel } from "./components/DeveloperPanel";
+import { ExpandedConsole } from "./components/ExpandedConsole";
+import { LoungeStrip } from "./components/LoungeStrip";
+import { useCommandBridge } from "./hooks/useCommandBridge";
+import { usePermissionStatus } from "./hooks/usePermissionStatus";
 import type {
   CommandSuggestion,
   ExecutionResult,
@@ -11,56 +11,65 @@ import type {
   ParsedCommand,
   ProviderKeyStatus,
   ResultFeedback,
-} from './types/commands';
-import type { ExecutionEvent } from './types/events';
+} from "./types/commands";
+import type { ExecutionEvent } from "./types/events";
 
-type AppMode = 'lounge' | 'expanded';
+type AppMode = "lounge" | "expanded";
 type ExecState =
-  | 'idle'
-  | 'parsing'
-  | 'awaiting_clarify'
-  | 'awaiting_choice'
-  | 'awaiting_route'
-  | 'awaiting_confirm'
-  | 'executing'
-  | 'done'
-  | 'error';
+  | "idle"
+  | "parsing"
+  | "awaiting_clarify"
+  | "awaiting_choice"
+  | "awaiting_route"
+  | "awaiting_confirm"
+  | "executing"
+  | "done"
+  | "error";
 
-const DEV_PANEL_UNLOCK = '//engine';
+const DEV_PANEL_UNLOCK = "//engine";
 
 const BUILT_IN_PREDICTIONS = [
-  'open youtube',
-  'open safari',
-  'close safari',
-  'open chrome',
-  'open finder',
-  'open slack',
-  'study mode',
-  'focus mode',
-  'break mode',
-  'quieter',
-  'display settings',
-  'downloads',
-  'set volume to 40',
+  "open youtube",
+  "open safari",
+  "close safari",
+  "open chrome",
+  "open finder",
+  "open slack",
+  "study mode",
+  "focus mode",
+  "break mode",
+  "quieter",
+  "display settings",
+  "downloads",
+  "set volume to 40",
   DEV_PANEL_UNLOCK,
 ] as const;
 
 export function App() {
-  const [mode, setMode] = useState<AppMode>('lounge');
-  const [inputValue, setInputValue] = useState('');
-  const [parsedCommand, setParsedCommand] = useState<ParsedCommand | null>(null);
-  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
-  const [execState, setExecState] = useState<ExecState>('idle');
+  const [mode, setMode] = useState<AppMode>("lounge");
+  const [inputValue, setInputValue] = useState("");
+  const [parsedCommand, setParsedCommand] = useState<ParsedCommand | null>(
+    null,
+  );
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(
+    null,
+  );
+  const [execState, setExecState] = useState<ExecState>("idle");
   const [events, setEvents] = useState<ExecutionEvent[]>([]);
   const [result, setResult] = useState<ExecutionResult | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [suggestions, setSuggestions] = useState<CommandSuggestion[]>([]);
   const [showDeveloperPanel, setShowDeveloperPanel] = useState(false);
-  const [primaryProviderStatus, setPrimaryProviderStatus] = useState<ProviderKeyStatus | null>(null);
+  const [primaryProviderStatus, setPrimaryProviderStatus] =
+    useState<ProviderKeyStatus | null>(null);
   const [developerBusy, setDeveloperBusy] = useState(false);
-  const [resultFeedback, setResultFeedback] = useState<ResultFeedback | null>(null);
-  const [windowFeedback, setWindowFeedback] = useState<ResultFeedback | null>(null);
+  const [resultFeedback, setResultFeedback] = useState<ResultFeedback | null>(
+    null,
+  );
+  const [windowFeedback, setWindowFeedback] = useState<ResultFeedback | null>(
+    null,
+  );
   const [pinBusy, setPinBusy] = useState(false);
   const [focusTrigger, setFocusTrigger] = useState(0);
   const [autoExec, setAutoExec] = useState<{
@@ -73,24 +82,33 @@ export function App() {
   const windowFeedbackTimerRef = useRef<number>(0);
   const suggestionRequestRef = useRef(0);
 
-  const { permissionStatus, refresh: refreshPermissionStatus } = usePermissionStatus();
+  const { permissionStatus, refresh: refreshPermissionStatus } =
+    usePermissionStatus();
 
   const parsedCommandRef = useRef<ParsedCommand | null>(null);
   parsedCommandRef.current = parsedCommand;
 
-  function showInlineFeedback(message: string, type: 'success' | 'error', duration: number) {
+  function showInlineFeedback(
+    message: string,
+    type: "success" | "error",
+    duration: number,
+  ) {
     window.clearTimeout(feedbackTimerRef.current);
     setResultFeedback({ message, type });
     feedbackTimerRef.current = window.setTimeout(() => {
       setResultFeedback(null);
-      setExecState('idle');
+      setExecState("idle");
       setParsedCommand(null);
       setResult(null);
       setFocusTrigger((n) => n + 1);
     }, duration);
   }
 
-  function showWindowFeedback(message: string, type: 'success' | 'error', duration: number) {
+  function showWindowFeedback(
+    message: string,
+    type: "success" | "error",
+    duration: number,
+  ) {
     window.clearTimeout(windowFeedbackTimerRef.current);
     setWindowFeedback({ message, type });
     windowFeedbackTimerRef.current = window.setTimeout(() => {
@@ -101,7 +119,7 @@ export function App() {
   const bridge = useCommandBridge({
     onParseStart: () => {
       setShowDeveloperPanel(false);
-      setExecState('parsing');
+      setExecState("parsing");
       setEvents([]);
       setResult(null);
       setAutoExec(null);
@@ -112,73 +130,80 @@ export function App() {
     onParsed: (cmd) => {
       setParsedCommand(cmd);
 
-      if (cmd.interpretation_decision === 'clarify') {
-        setMode('lounge');
+      if (cmd.interpretation_decision === "clarify") {
+        setMode("lounge");
         setSelectedRouteIndex(null);
-        setExecState('awaiting_clarify');
+        setExecState("awaiting_clarify");
         return;
       }
 
-      if (cmd.interpretation_decision === 'offer_choices' && (cmd.choices?.length ?? 0) > 0) {
-        setMode('lounge');
+      if (
+        cmd.interpretation_decision === "offer_choices" &&
+        (cmd.choices?.length ?? 0) > 0
+      ) {
+        setMode("lounge");
         setSelectedRouteIndex(null);
-        setExecState('awaiting_choice');
+        setExecState("awaiting_choice");
         return;
       }
 
       if (cmd.routes.length === 0) {
-        setExecState('error');
-        showInlineFeedback(getUnresolvedMessage(cmd), 'error', 2600);
+        setExecState("error");
+        showInlineFeedback(getUnresolvedMessage(cmd), "error", 2600);
         return;
       }
 
       if (cmd.routes.length === 1) {
         setSelectedRouteIndex(0);
         if (cmd.requires_approval || isPlanRoute(cmd.routes[0])) {
-          setMode('expanded');
-          setExecState('awaiting_confirm');
+          setMode("expanded");
+          setExecState("awaiting_confirm");
         } else {
           oneShotRef.current = true;
           setAutoExec({ cmd, routeIdx: 0 });
         }
       } else {
-        setMode('expanded');
+        setMode("expanded");
         setSelectedRouteIndex(null);
-        setExecState('awaiting_route');
+        setExecState("awaiting_route");
       }
     },
     onParseError: (err) => {
-      setExecState('error');
-      showInlineFeedback(err, 'error', 3500);
+      setExecState("error");
+      showInlineFeedback(err, "error", 3500);
     },
     onExecutionEvent: (event) => {
       setEvents((prev) => [...prev, event]);
     },
     onExecuted: (res) => {
       setResult(res);
-      const isSuccess = res.outcome === 'success';
-      setExecState(isSuccess ? 'done' : 'error');
+      const isSuccess = res.outcome === "success";
+      setExecState(isSuccess ? "done" : "error");
 
       if (oneShotRef.current) {
         oneShotRef.current = false;
         const msg = isSuccess
-          ? (res.human_message || '✓ Done')
-          : (res.human_message || '✗ Failed');
-        showInlineFeedback(msg, isSuccess ? 'success' : 'error', isSuccess ? 2000 : 3500);
+          ? res.human_message || "✓ Done"
+          : res.human_message || "✗ Failed";
+        showInlineFeedback(
+          msg,
+          isSuccess ? "success" : "error",
+          isSuccess ? 2000 : 3500,
+        );
       }
 
       bridge.getHistory().then(setHistory);
     },
     onExecuteError: (err) => {
-      setExecState('error');
+      setExecState("error");
 
       if (oneShotRef.current) {
         oneShotRef.current = false;
-        showInlineFeedback(err, 'error', 3500);
+        showInlineFeedback(err, "error", 3500);
       } else {
         setResult({
-          command_id: parsedCommandRef.current?.id ?? '',
-          outcome: 'recoverable_failure',
+          command_id: parsedCommandRef.current?.id ?? "",
+          outcome: "recoverable_failure",
           message: err,
           human_message: `✗ ${err}`,
           duration_ms: 0,
@@ -195,7 +220,7 @@ export function App() {
       }
     });
     void refreshPermissionStatus();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -205,7 +230,7 @@ export function App() {
   useEffect(() => {
     if (!autoExec) return;
     setAutoExec(null);
-    setExecState('executing');
+    setExecState("executing");
     bridge.approveAndExecute(autoExec.cmd.id, autoExec.routeIdx);
   }, [autoExec, bridge]);
 
@@ -238,7 +263,7 @@ export function App() {
   const refreshDeveloperStatus = useCallback(async () => {
     setDeveloperBusy(true);
     try {
-      const status = await bridge.getProviderKeyStatus('perplexity');
+      const status = await bridge.getProviderKeyStatus("perplexity");
       setPrimaryProviderStatus(status);
     } finally {
       setDeveloperBusy(false);
@@ -247,10 +272,10 @@ export function App() {
 
   const handleOpenEngineLink = useCallback(() => {
     setShowDeveloperPanel(true);
-    setMode('expanded');
+    setMode("expanded");
     setParsedCommand(null);
     setSelectedRouteIndex(null);
-    setExecState('idle');
+    setExecState("idle");
     setEvents([]);
     setResult(null);
     setAutoExec(null);
@@ -266,11 +291,11 @@ export function App() {
 
       if (trimmed.toLowerCase() === DEV_PANEL_UNLOCK) {
         handleOpenEngineLink();
-        setInputValue('');
+        setInputValue("");
         return;
       }
 
-      setInputValue('');
+      setInputValue("");
       bridge.parseCommand(trimmed);
     },
     [bridge, handleOpenEngineLink],
@@ -286,12 +311,15 @@ export function App() {
     setInputValue(value);
   }, []);
 
-  const handleSelectChoice = useCallback((value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    setInputValue('');
-    bridge.parseCommand(trimmed);
-  }, [bridge]);
+  const handleSelectChoice = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      setInputValue("");
+      bridge.parseCommand(trimmed);
+    },
+    [bridge],
+  );
 
   const handleSelectRoute = useCallback(
     (index: number) => {
@@ -299,9 +327,9 @@ export function App() {
       if (!parsedCommand) return;
       const selectedRoute = parsedCommand.routes[index];
       if (parsedCommand.requires_approval || isPlanRoute(selectedRoute)) {
-        setExecState('awaiting_confirm');
+        setExecState("awaiting_confirm");
       } else {
-        setExecState('executing');
+        setExecState("executing");
         bridge.approveAndExecute(parsedCommand.id, index);
       }
     },
@@ -310,7 +338,7 @@ export function App() {
 
   const handleConfirm = useCallback(() => {
     if (!parsedCommand || selectedRouteIndex === null) return;
-    setExecState('executing');
+    setExecState("executing");
     bridge.approveAndExecute(parsedCommand.id, selectedRouteIndex);
   }, [parsedCommand, selectedRouteIndex, bridge]);
 
@@ -324,12 +352,12 @@ export function App() {
   const handleUndo = useCallback(() => {
     setEvents([]);
     setResult(null);
-    setExecState('executing');
+    setExecState("executing");
     bridge.undoLast();
   }, [bridge]);
 
   const handleCollapse = useCallback(() => {
-    if (parsedCommand && execState === 'awaiting_confirm') {
+    if (parsedCommand && execState === "awaiting_confirm") {
       bridge.denyCommand(parsedCommand.id);
     }
     reset();
@@ -345,7 +373,7 @@ export function App() {
         setAlwaysOnTop(config.always_on_top);
       })
       .catch((err) => {
-        showWindowFeedback(`Pin toggle failed: ${String(err)}`, 'error', 2600);
+        showWindowFeedback(`Pin toggle failed: ${String(err)}`, "error", 2600);
       })
       .finally(() => {
         setPinBusy(false);
@@ -356,8 +384,8 @@ export function App() {
     async (value: string) => {
       setDeveloperBusy(true);
       try {
-        await bridge.setProviderKey('perplexity', value);
-        const status = await bridge.getProviderKeyStatus('perplexity');
+        await bridge.setProviderKey("perplexity", value);
+        const status = await bridge.getProviderKeyStatus("perplexity");
         setPrimaryProviderStatus(status);
       } finally {
         setDeveloperBusy(false);
@@ -369,36 +397,42 @@ export function App() {
   const handleClearPrimaryEngine = useCallback(async () => {
     setDeveloperBusy(true);
     try {
-      await bridge.deleteProviderKey('perplexity');
-      const status = await bridge.getProviderKeyStatus('perplexity');
+      await bridge.deleteProviderKey("perplexity");
+      const status = await bridge.getProviderKeyStatus("perplexity");
       setPrimaryProviderStatus(status);
     } finally {
       setDeveloperBusy(false);
     }
   }, [bridge]);
 
-  const handleInspectLocal = useCallback(async (value: string) => {
-    return bridge.debugInterpretLocal(value);
-  }, [bridge]);
+  const handleInspectLocal = useCallback(
+    async (value: string) => {
+      return bridge.debugInterpretLocal(value);
+    },
+    [bridge],
+  );
 
-  const handleInputChange = useCallback((value: string) => {
-    setInputValue(value);
-    if (resultFeedback) {
-      window.clearTimeout(feedbackTimerRef.current);
-      setResultFeedback(null);
-      setExecState('idle');
-      setParsedCommand(null);
-      setResult(null);
-    }
-  }, [resultFeedback]);
+  const handleInputChange = useCallback(
+    (value: string) => {
+      setInputValue(value);
+      if (resultFeedback) {
+        window.clearTimeout(feedbackTimerRef.current);
+        setResultFeedback(null);
+        setExecState("idle");
+        setParsedCommand(null);
+        setResult(null);
+      }
+    },
+    [resultFeedback],
+  );
 
   function reset() {
     window.clearTimeout(feedbackTimerRef.current);
-    setMode('lounge');
-    setInputValue('');
+    setMode("lounge");
+    setInputValue("");
     setParsedCommand(null);
     setSelectedRouteIndex(null);
-    setExecState('idle');
+    setExecState("idle");
     setEvents([]);
     setResult(null);
     setAutoExec(null);
@@ -410,21 +444,21 @@ export function App() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && mode === 'expanded') {
+      if (e.key === "Escape" && mode === "expanded") {
         e.preventDefault();
         handleCollapse();
-      } else if (execState === 'awaiting_confirm') {
-        if (e.key === 'Enter') {
+      } else if (execState === "awaiting_confirm") {
+        if (e.key === "Enter") {
           e.preventDefault();
           handleConfirm();
-        } else if (e.key === 'Escape') {
+        } else if (e.key === "Escape") {
           e.preventDefault();
           handleCancel();
         }
       }
     }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [mode, execState, handleCollapse, handleConfirm, handleCancel]);
 
   useEffect(() => {
@@ -442,17 +476,17 @@ export function App() {
 
     refreshConfig();
     const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === "visible") {
         refreshConfig();
       }
     }, 15_000);
 
-    window.addEventListener('focus', refreshFocusedMachineTruth);
-    document.addEventListener('visibilitychange', refreshConfig);
+    window.addEventListener("focus", refreshFocusedMachineTruth);
+    document.addEventListener("visibilitychange", refreshConfig);
     return () => {
       window.clearInterval(interval);
-      window.removeEventListener('focus', refreshFocusedMachineTruth);
-      document.removeEventListener('visibilitychange', refreshConfig);
+      window.removeEventListener("focus", refreshFocusedMachineTruth);
+      document.removeEventListener("visibilitychange", refreshConfig);
     };
   }, [bridge]);
 
@@ -464,19 +498,29 @@ export function App() {
           prediction={prediction}
           suggestions={suggestions}
           clarificationMessage={
-            execState === 'awaiting_clarify'
-              ? (parsedCommand?.clarification_message ?? parsedCommand?.unresolved_message ?? null)
+            execState === "awaiting_clarify"
+              ? (parsedCommand?.clarification_message ??
+                parsedCommand?.unresolved_message ??
+                null)
               : null
           }
-          clarificationSlots={execState === 'awaiting_clarify' ? (parsedCommand?.clarification_slots ?? []) : []}
-          choices={execState === 'awaiting_choice' ? (parsedCommand?.choices ?? []) : []}
+          clarificationSlots={
+            execState === "awaiting_clarify"
+              ? (parsedCommand?.clarification_slots ?? [])
+              : []
+          }
+          choices={
+            execState === "awaiting_choice"
+              ? (parsedCommand?.choices ?? [])
+              : []
+          }
           execState={execState}
           alwaysOnTop={alwaysOnTop}
           pinBusy={pinBusy}
           focusTrigger={focusTrigger}
           resultFeedback={resultFeedback}
           windowFeedback={windowFeedback}
-          embedded={mode === 'expanded'}
+          embedded={mode === "expanded"}
           onInput={handleInputChange}
           onSubmit={handleSubmit}
           onAcceptPrediction={handleAcceptPrediction}
@@ -484,10 +528,12 @@ export function App() {
           onSelectChoice={handleSelectChoice}
           onEscape={handleCollapse}
           onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-          onOpenEngineLink={mode === 'lounge' ? handleOpenEngineLink : undefined}
+          onOpenEngineLink={
+            mode === "lounge" ? handleOpenEngineLink : undefined
+          }
         />
-        {mode === 'expanded' && (
-          showDeveloperPanel ? (
+        {mode === "expanded" &&
+          (showDeveloperPanel ? (
             <DeveloperPanel
               status={primaryProviderStatus}
               busy={developerBusy}
@@ -514,8 +560,7 @@ export function App() {
               onUndo={handleUndo}
               onCollapse={handleCollapse}
             />
-          )
-        )}
+          ))}
       </div>
     </div>
   );
@@ -523,9 +568,12 @@ export function App() {
 
 function getPrediction(inputValue: string, history: HistoryEntry[]): string {
   const normalized = inputValue.trim().toLowerCase();
-  if (!normalized) return '';
+  if (!normalized) return "";
 
-  const candidates = [...history.map((entry) => entry.command.raw_input), ...BUILT_IN_PREDICTIONS];
+  const candidates = [
+    ...history.map((entry) => entry.command.raw_input),
+    ...BUILT_IN_PREDICTIONS,
+  ];
   const seen = new Set<string>();
 
   for (const candidate of candidates) {
@@ -538,7 +586,7 @@ function getPrediction(inputValue: string, history: HistoryEntry[]): string {
     }
   }
 
-  return '';
+  return "";
 }
 
 function rankSuggestions(
@@ -549,7 +597,10 @@ function rankSuggestions(
   const nowHour = new Date().getHours();
 
   return [...suggestions].sort((a, b) => {
-    return scoreSuggestion(b, history, nowHour) - scoreSuggestion(a, history, nowHour);
+    return (
+      scoreSuggestion(b, history, nowHour) -
+      scoreSuggestion(a, history, nowHour)
+    );
   });
 }
 
@@ -573,55 +624,61 @@ function scoreSuggestion(
 }
 
 function getUnresolvedMessage(cmd: ParsedCommand): string {
-  switch (cmd.unresolved_code) {
-    case 'unsupported_command':
-      return 'That command is outside current local coverage.';
-    case 'unsupported_service':
-      return 'That service is outside current local coverage.';
-    case 'browser_not_installed':
-      return cmd.unresolved_message?.trim() || 'That browser is not installed on this Mac.';
-    case 'app_not_installed':
-      return cmd.unresolved_message?.trim() || 'That app is not installed on this Mac.';
-    case 'path_not_found':
-      return cmd.unresolved_message?.trim() || 'That path does not exist.';
-    case 'source_path_not_found':
-      return cmd.unresolved_message?.trim() || 'The source path does not exist.';
-    case 'base_path_unresolved':
-      return cmd.unresolved_message?.trim() || 'I could not resolve where to create that folder.';
-    case 'target_already_exists':
-      return cmd.unresolved_message?.trim() || 'That target already exists.';
-    case 'destination_path_unresolved':
-      return cmd.unresolved_message?.trim() || 'I could not resolve the destination path.';
-    case 'destination_parent_missing':
-      return cmd.unresolved_message?.trim() || 'The destination parent folder does not exist.';
-    case 'permanent_delete_blocked':
-      return cmd.unresolved_message?.trim() || 'Permanent delete is blocked. Use trash <path> instead.';
-    case 'ambiguous_target':
-      return cmd.unresolved_message?.trim() || 'That target is ambiguous. Type a little more of the app name.';
-    case 'provider_configuration_required':
-      return cmd.unresolved_message?.trim() || 'Link a provider in the engine panel for broader interpretation.';
-    default:
-      break;
-  }
-
   if (cmd.unresolved_message?.trim()) {
     return cmd.unresolved_message.trim();
   }
 
+  switch (cmd.unresolved_code) {
+    case "unsupported_command":
+      return "Not in local command set. Try: open [app], set volume [0-100], focus mode, study mode, display settings.";
+    case "unsupported_service":
+      return "That service is not configured. Check available integrations in settings.";
+    case "browser_not_installed":
+      return "That browser is not installed. Supported: Safari, Chrome, Firefox, Edge.";
+    case "app_not_installed":
+      return "App not found on this Mac. Try: open finder, open settings, open terminal.";
+    case "path_not_found":
+      return "Path does not exist. Check the path and try again.";
+    case "source_path_not_found":
+      return "Source path not found. Verify the path exists before copying or moving.";
+    case "base_path_unresolved":
+      return "Could not resolve folder location. Try specifying a full path.";
+    case "target_already_exists":
+      return "That file or folder already exists. Choose a different name or remove it first.";
+    case "destination_path_unresolved":
+      return "Destination path could not be resolved. Try specifying a full path.";
+    case "destination_parent_missing":
+      return "Parent folder does not exist. Create the parent folder first.";
+    case "permanent_delete_blocked":
+      return "Permanent delete is blocked for safety. Use: trash [path] to move to trash instead.";
+    case "ambiguous_target":
+      return "Multiple matches found. Be more specific with the app or file name.";
+    case "provider_configuration_required":
+      return "Provider not configured. Link an API key in settings for advanced features.";
+  }
+
   switch (cmd.kind) {
-    case 'unknown':
-      return 'That command is outside current local coverage.';
-    case 'app_control':
-      return 'I could not resolve that app action on this Mac.';
-    case 'settings':
-      return 'That settings route is not available yet.';
-    case 'ui_automation':
-      return 'That UI automation route is not available yet.';
+    case "unknown":
+      return "Unknown command. Try: open [app], set volume, focus mode, study mode.";
+    case "app_control":
+      return "App action not supported on this Mac. App may not be installed.";
+    case "settings":
+      return "That settings pane is not available yet.";
+    case "ui_automation":
+      return "That automation route is not available yet.";
+    case "filesystem":
+      return "File operation failed. Check paths and permissions.";
+    case "shell_execution":
+      return "Shell command not in local coverage. Use app control or system settings instead.";
+    case "query":
+      return "Query not supported. Try app control or system settings.";
     default:
-      return 'I could not resolve a safe local route for that command.';
+      return "Could not resolve a safe local route for that command.";
   }
 }
 
-function isPlanRoute(route: ParsedCommand['routes'][number] | undefined): boolean {
-  return route?.action.type === 'run_plan';
+function isPlanRoute(
+  route: ParsedCommand["routes"][number] | undefined,
+): boolean {
+  return route?.action.type === "run_plan";
 }
