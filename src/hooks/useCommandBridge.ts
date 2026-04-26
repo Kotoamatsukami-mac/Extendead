@@ -4,6 +4,7 @@ import { useCallback, useRef } from 'react';
 import type {
   ExecutionResult,
   AppConfig,
+  InterpretationPreview,
   ParsedCommand,
 } from '../types/commands';
 
@@ -18,6 +19,14 @@ export interface CommandBridgeCallbacks {
 export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
+
+  const interpretPreview = useCallback(async (input: string): Promise<InterpretationPreview | null> => {
+    try {
+      return await invoke<InterpretationPreview>('interpret_preview', { input });
+    } catch {
+      return null;
+    }
+  }, []);
 
   const parseCommand = useCallback(async (input: string) => {
     cbRef.current.onParseStart();
@@ -87,6 +96,7 @@ export function useCommandBridge(callbacks: CommandBridgeCallbacks) {
   );
 
   return {
+    interpretPreview,
     parseCommand,
     approveAndExecute,
     denyCommand,
